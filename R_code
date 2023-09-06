@@ -1,0 +1,1470 @@
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("ggsci")
+library(patchwork)
+library(car)
+library(ggpubr)
+library(reshape2)
+library(reshape)
+library(pheatmap)
+library(EnhancedVolcano)
+library(pathfindR)
+library(enrichplot)
+library(doBy)
+
+################################################################################# Functions
+
+test_group_difference <- function(df, group_col, selected_col) {
+  # Load necessary packages
+  library(tidyverse)
+  library(car)
+  df = filter(df, !is.na(!!sym(selected_col)))
+  df[[group_col]] = factor(df[[group_col]])
+  
+  # Check if the selected column and group column exist in the data frame
+  if (!(selected_col %in% names(df))) {
+    stop(paste("Error: Selected column", selected_col, "does not exist in data frame."))
+  }
+  if (!(group_col %in% names(df))) {
+    stop(paste("Error: Group column", group_col, "does not exist in data frame."))
+  }
+  
+  # Split the data frame by the group column
+  groups <- df %>% 
+    split(.[[group_col]])
+  
+  # Check if there are only two groups
+  if (length(groups) != 2) {
+    stop("Error: This function is designed to test differences between two groups only.")
+  }
+  
+  # Test for normality and equal variance of the two groups
+  normality_test <- tapply(df[[selected_col]], df[[group_col]], shapiro.test)
+  equal_var_test <- leveneTest(df[[selected_col]] ~ df[[group_col]])
+  
+  # If normality and equal variance assumptions are met, perform Welch's t-test
+  if (all(sapply(normality_test, function(x) x$p.value >= 0.05)) & equal_var_test$'Pr(>F)'[1] >= 0.05) {
+    t_test <- t.test(df[[selected_col]] ~ df[[group_col]], var.equal = TRUE, na.rm = T)
+    return(t_test)
+  }
+  # If normality assumptions are not met, perform Wilcoxon rank sum test
+  wilcox_test <- wilcox.test(df[[selected_col]] ~ df[[group_col]], na.rm = T, exact = FALSE)
+  return(wilcox_test)
+}
+
+##############
+
+############################################################################# FIGURE 2 ########################################################################################################
+
+######## COMBINED HC-HIV hSBA CUTOFFS CURVES
+df = as.data.frame(men_sba)
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+  df = df %>% 
+  rename(
+    T0 = SBA_T0,
+    T2 = SBA_T2
+  )
+
+# Filter out rows with missing values for T0
+df_filtered_t0 <- df[, c("StudyPID", "Group", "T0")] %>% 
+  filter(!is.na(T0), !is.na(Group))
+
+# Filter out rows with missing values for T2
+df_filtered_t2 <- df[, c("StudyPID", "Group", "T2")] %>% 
+  filter(!is.na(T2), !is.na(Group))
+
+# Combine the filtered data frames
+df_combined <- merge(df_filtered_t0, df_filtered_t2, all.x = T)
+df_combined <- df_combined[complete.cases(df_combined),]
+
+cutoffs <- c(2, 4, 8, 16, 32, 64, 128, 256, 512)
+
+# Reshape the data into the desired format
+
+df_long <- df_combined %>%
+  pivot_longer(cols = c(T0, T2), names_to = "Value", values_to = "TempValue") %>%
+  mutate(Group = paste(Group, Value, sep = "_"),
+         Value = TempValue) %>%
+  select(-TempValue)
+
+freq_df <- as.data.frame(aggregate(Value ~ Group, data = df_long, FUN = function(x) {
+  sapply(cutoffs, function(cutoff) {
+    sum(x >= cutoff) / length(x) * 100
+  })
+}))
+
+treats = freq_df$Group
+
+freq_df = data.frame(freq_df$Value)
+colnames(freq_df) = cutoffs
+freq_df$Group = treats
+
+
+# Reshape the data into the desired format
+freq_df_long <- freq_df %>%
+  gather(key = "Cutoff", value = "Value", -Group)
+
+# Order the levels of the "Cutoff" variable
+freq_df_long$Cutoff <- factor(freq_df_long$Cutoff, levels = as.character(cutoffs))
+
+# Plot the data
+plot_1 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = Group)) +
+  geom_vline(xintercept = "4", 
+             linetype = "dashed", 
+             color = "darkgrey", 
+             size = 1) +  # Add horizontal line
+  geom_line(size = 1.5, 
+            aes(group = Group, linetype = Group)) +
+  geom_point(size = 4, 
+             aes(shape = Group)) +
+  geom_rect(aes(xmin = 0, xmax = 2, ymin = -Inf, ymax = Inf), 
+            color = NA, 
+            fill='gainsboro', 
+            alpha= 0.02)+
+  labs(x = "hSBA", 
+       y = "Patients (%)", 
+       color = "Group") +
+  scale_color_manual(values = c("HC_T0" = "blue", 
+                                "PHIV_T0" = "red", 
+                                "HC_T2" = "blue", 
+                                "PHIV_T2" = "red")) +
+  scale_linetype_manual(values = c("HC_T0" = "dashed", 
+                                   "PHIV_T0" = "dashed", 
+                                   "HC_T2" = "solid", 
+                                   "PHIV_T2" = "solid")) +
+  ggtitle("Patients (%) per hSBA titers") +
+  theme_classic(base_size = 30) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+######## COMBINED HIV
+df = as.data.frame(men_sba)
+df <- merge(df, men_treatment, all.x = T)
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+df = df %>% 
+  rename(
+    T0 = SBA_T0,
+    T2 = SBA_T2
+  )
+
+# Filter out rows with missing values for T0
+df_filtered_t0 <- df[, c("StudyPID", "Treatment", "T0")] %>% 
+  filter(!is.na(T0), !is.na(Treatment))
+
+# Filter out rows with missing values for T2
+df_filtered_t2 <- df[, c("StudyPID", "Treatment", "T2")] %>% 
+  filter(!is.na(T2), !is.na(Treatment))
+
+# Combine the filtered data frames
+df_combined <- merge(df_filtered_t0, df_filtered_t2, all.x = T)
+df_combined <- df_combined[complete.cases(df_combined),]
+
+
+cutoffs <- c(2, 4, 8, 16, 32, 64, 128, 256, 512)
+
+# Reshape the data into the desired format
+
+df_long <- df_combined %>%
+  pivot_longer(cols = c(T0, T2), names_to = "Value", values_to = "TempValue") %>%
+  mutate(Treatment = paste(Treatment, Value, sep = "_"),
+         Value = TempValue) %>%
+  select(-TempValue)
+
+freq_df <- as.data.frame(aggregate(Value ~ Treatment, data = df_long, FUN = function(x) {
+  sapply(cutoffs, function(cutoff) {
+    sum(x >= cutoff) / length(x) * 100
+  })
+}))
+
+treats = freq_df$Treatment
+
+freq_df = data.frame(freq_df$Value)
+colnames(freq_df) = cutoffs
+freq_df$Treatment = treats
+
+
+# Reshape the data into the desired format
+freq_df_long <- freq_df %>%
+  gather(key = "Cutoff", value = "Value", -Treatment)
+
+# Order the levels of the "Cutoff" variable
+freq_df_long$Cutoff <- factor(freq_df_long$Cutoff, levels = as.character(cutoffs))
+ 
+colnames(freq_df_long)[1] = "ART start"
+
+# Plot the data
+plot_2 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = `ART start`, linetype = `ART start`)) +
+  geom_vline(xintercept = "4", 
+             linetype = "dashed", 
+             color = "darkgrey", 
+             size = 1) +  # Add horizontal line
+  geom_line(size = 1.5, 
+            aes(group = `ART start`, linetype = `ART start`)) +
+  geom_point(size = 4, 
+             aes(shape = `ART start`)) +
+  geom_rect(aes(xmin=0, xmax=2,ymin=-Inf,ymax=Inf), 
+            color = NA, 
+            fill='gainsboro', 
+            alpha= 0.02)+
+  labs(x = "hSBA", 
+       y = "Patients (%)", 
+       color = "ART start", 
+       linetype = "ART start") +
+  scale_color_manual(values = c("Early_T0" = "darkcyan", 
+                                "Late_T0" = "darkorange", 
+                                "Early_T2" = "darkcyan", 
+                                "Late_T2" = "darkorange")) +
+  scale_linetype_manual(values = c("Early_T0" = 2, 
+                                   "Late_T0" = 2, 
+                                   "Early_T2" = 1, 
+                                   "Late_T2" = 1)) +
+  ggtitle("PHIV Patients (%) per hSBA titers") +
+  theme_classic(base_size = 30) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+
+
+####################SBA per TP and Group
+# create a new dataframe for plotting
+df = as.data.frame(men_sba) 
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+df_plot <- df %>%
+  pivot_longer(cols = c(SBA_T0, SBA_T2, SBA_T3),
+               names_to = "time",
+               values_to = "value") %>%
+  mutate(time = factor(time, levels = c("SBA_T0", "SBA_T2", "SBA_T3")))
+
+df_plot$Group <- as.factor(df_plot$Group)
+
+t0 = test_group_difference(df_plot[df_plot$time=="SBA_T0",], "Group", "value")
+t2 = test_group_difference(df_plot[df_plot$time=="SBA_T2",], "Group", "value")
+t3 = test_group_difference(df_plot[df_plot$time=="SBA_T3",], "Group", "value")
+
+# add comparisons of means for each group separately
+cmp_t0_t2_HC <- wilcox.test(df_plot$value[df_plot$Group == "HC" & df_plot$time == "SBA_T0"], 
+                            df_plot$value[df_plot$Group == "HC" & df_plot$time =="SBA_T2"], 
+                            exact = F)
+cmp_t2_t3_HC <- wilcox.test(df_plot$value[df_plot$Group == "HC" & df_plot$time =="SBA_T2"], 
+                            df_plot$value[df_plot$Group == "HC" & df_plot$time =="SBA_T3"],  
+                            exact = F)
+cmp_t0_t2_HIV <- wilcox.test(df_plot$value[df_plot$Group == "PHIV" & df_plot$time =="SBA_T0"], 
+                             df_plot$value[df_plot$Group == "PHIV" & df_plot$time =="SBA_T2"], 
+                             exact = F)
+cmp_t2_t3_HIV <- wilcox.test(df_plot$value[df_plot$Group == "PHIV" & df_plot$time =="SBA_T2"], 
+                             df_plot$value[df_plot$Group == "PHIV" & df_plot$time =="SBA_T3"], 
+                             exact = F)
+
+# plot the values with Group as hue
+fc_tp_1 = ggplot(df_plot, aes(x = time, y = value, color = Group, fill = Group)) +
+  geom_boxplot(alpha = 0.6) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  labs(x = "Time Points", y = "hSBA", color = "Group", title = "hSBA Values by Group") +
+  stat_summary(fun = "median", 
+               aes(colour = Group), 
+               geom = "crossbar", 
+               width = 0.6,
+               position = position_dodge(width = 0.75)) +
+  stat_summary(fun = median, 
+               geom = "line", 
+               aes(group = Group, color = Group), 
+               linewidth = 1.5, 
+               position = position_dodge(width = 0.75)) +
+  geom_signif(y_position = c(500, 525, 500, 525, 555,555, 555), 
+              xmin = c(0.8, 1.2, 1.85, 2.2, 0.8, 1.8, 2.8), 
+              xmax = c(1.8, 2.15, 2.8, 3.2, 1.2, 2.2, 3.2), 
+              aes(size = 20),
+              annotation = c("< 0.001",
+                             "< 0.001",
+                             "0.004",
+                             "0.015",
+                             round(t0$p.value,2),
+                             round(t2$p.value, 2),
+                             round(t3$p.value, 2)),
+              tip_length = 0.01, color = "black") +
+  geom_jitter(position = position_jitterdodge(dodge.width = 0.75), alpha = 0.6, size = 3) +  # Add dodged points to the plot()
+  scale_x_discrete(labels = c("T0", "T2", "T3")) +
+  theme_classic(base_size = 30)
+
+
+##############SBA per TP and Group TREATMENT
+# create a new dataframe for plotting
+df = as.data.frame(men_sba)
+
+df <- merge(df, men_treatment, all.x = T)
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
+
+df <- df[!is.na(df$Treatment), ]
+
+df_plot <- df %>%
+  pivot_longer(cols = c(SBA_T0, SBA_T2, SBA_T3),
+               names_to = "time",
+               values_to = "value") %>%
+  mutate(time = factor(time, levels = c("SBA_T0", "SBA_T2", "SBA_T3")))
+
+df_plot$Treatment <- as.factor(df_plot$Treatment)
+
+t0 = test_group_difference(df_plot[df_plot$time=="SBA_T0",], "Treatment", "value")
+t2 = test_group_difference(df_plot[df_plot$time=="SBA_T2",], "Treatment", "value")
+t3 = test_group_difference(df_plot[df_plot$time=="SBA_T3",], "Treatment", "value")
+
+# add comparisons of means for each group separately
+cmp_t0_t2_HC <- wilcox.test(df_plot$value[df_plot$Treatment == "Early" & df_plot$time == "SBA_T0"], 
+                            df_plot$value[df_plot$Treatment == "Early" & df_plot$time =="SBA_T2"], 
+                            exact = F)
+cmp_t2_t3_HC <- wilcox.test(df_plot$value[df_plot$Treatment == "Early" & df_plot$time =="SBA_T2"], 
+                            df_plot$value[df_plot$Treatment == "Early" & df_plot$time =="SBA_T3"], 
+                            exact = F)
+cmp_t0_t2_HIV <- wilcox.test(df_plot$value[df_plot$Treatment == "Late" & df_plot$time =="SBA_T0"], 
+                             df_plot$value[df_plot$Treatment == "Late" & df_plot$time =="SBA_T2"], 
+                             exact = F)
+cmp_t2_t3_HIV <- wilcox.test(df_plot$value[df_plot$Treatment == "Late" & df_plot$time =="SBA_T2"], 
+                             df_plot$value[df_plot$Treatment == "Late" & df_plot$time =="SBA_T3"], 
+                             exact = F)
+
+# plot the values with Group as hue
+colnames(df_plot)[4] = "ART start"
+
+fc_tp_2 = ggplot(df_plot, aes(x = time, y = value, color = `ART start`, fill = `ART start`)) +
+  geom_boxplot(alpha = 0.6) +
+  scale_fill_manual(values = c("Early" = "darkcyan", "Late" = "darkorange")) +
+  scale_color_manual(values = c("Early" = "darkcyan", "Late" = "darkorange")) +
+  labs(x = "Time Points", y = "hSBA", color = "ART start", title = "PHIV hSBA Values by ART start") +
+  stat_summary(fun = "median", 
+               aes(colour = `ART start`), 
+               geom = "crossbar", 
+               width = 0.6,
+               position = position_dodge(width = 0.75)) +
+  stat_summary(fun = median, 
+               geom = "line", 
+               aes(group = `ART start`, color = `ART start`), 
+               linewidth = 1.5, 
+               position = position_dodge(width = 0.75)) +
+  geom_signif(y_position = c(500, 525, 500, 525, 555,555, 555), 
+              xmin = c(0.8, 1.2, 1.85, 2.2, 0.8, 1.8, 2.8), 
+              xmax = c(1.8, 2.15, 2.8, 3.2, 1.2, 2.2, 3.2), 
+              aes(size = 20),
+              annotation = c("< 0.001",
+                             "< 0.001",
+                             "0.02",
+                             "0.12",
+                             round(t0$p.value,2),
+                             round(t2$p.value, 2),
+                             round(t3$p.value, 2)),
+              tip_length = 0.01, color = "black") +
+  geom_jitter(position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.2), 
+              alpha = 0.6, 
+              size = 3) +  # Add dodged points to the plot() 
+  scale_x_discrete(labels = c("T0", "T2", "T3")) +
+  theme_classic(base_size = 30)
+
+##############################FC T0-T2
+# Create plot
+df = as.data.frame(men_sba) 
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+df$SBA_FC = df$SBA_T2 / df$SBA_T0
+df$Seroprotection <- ifelse(df$SBA_T0 < 4, "NSP", "SP")
+
+mwu_test_fc <- wilcox.test(SBA_FC ~ Group, data = subset(df, Group %in% c("HC", "PHIV")), 
+                           na.rm = T,
+                           exact = F)
+
+df = df[complete.cases(df$SBA_FC), ]
+
+fc_t0t2_1 = ggplot(df, aes(x = Group, y = SBA_FC, color = Group)) +
+  geom_jitter(data = df, 
+              aes(fill = Group, 
+                  size = SBA_T0), 
+              position = position_jitter(width = 0.2, height = .05), 
+              alpha = .35) +  # Use a different shape for specific points
+  geom_hline(yintercept = 4, linetype = "dashed", color = "red", size = 1) +  # Add horizontal line
+  geom_text(x = 0.65, 
+            y = 4.3, 
+            label = paste0("SC=", sum(df$SBA_FC[df$Group == "HC"] >= 4, na.rm = T), 
+                            " (", sum(df$SBA_FC[df$Group == "HC"] >= 4, na.rm = T)/sum(df$Group == "HC", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  geom_text(x = 1.65, 
+            y = 4.3, 
+            label = paste0("SC=", sum(df$SBA_FC[df$Group == "PHIV"] >= 4,  na.rm = T), 
+                            " (", sum(df$SBA_FC[df$Group == "PHIV"] >= 4, na.rm = T)/sum(df$Group == "PHIV", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(x = 0.65, 
+            y = -2, 
+            label = paste0("NSC=", sum(df$SBA_FC[df$Group == "HC"] < 4, na.rm = T), 
+                            " (", sum(df$SBA_FC[df$Group == "HC"] < 4, na.rm = T)/sum(df$Group == "HC", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  geom_text(x = 1.65, 
+            y = -2, 
+            label = paste0("NSC=", sum(df$SBA_FC[df$Group == "PHIV"] < 4, na.rm = T), 
+                            " (", sum(df$SBA_FC[df$Group == "PHIV"] < 4, na.rm = T)/sum(df$Group == "PHIV", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  stat_compare_means(comparisons = list(c("HC", "PHIV")), 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     exact = FALSE,
+                     size = 6) +
+  stat_summary(fun.data = "mean_cl_boot", 
+               colour = "black", 
+               geom = "crossbar", 
+               width = 0.2) +
+  labs(x = "Group", 
+       y = "hSBA FC T0-T2", 
+       title = "hSBA Fold Change T0-T2") +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  scale_size_continuous(range = c(3, 26), breaks = c(2, 4, 8, 16, 32, 64, 128, 256, 512)) +
+  guides(color = guide_legend(override.aes = list(size = 6))) +
+  guides(shape = guide_legend(override.aes = list(size = 6))) +
+  theme_classic(base_size = 30)
+
+#############  FC T0-T2 early-late
+df = as.data.frame(men_sba)
+df <- merge(df, men_treatment, all.x = T)
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
+
+df$SBA_FC = df$SBA_T2 / df$SBA_T0
+df$Seroprotection <- ifelse(df$SBA_T0 < 4, "NSP", "SP")
+
+
+df <- df[!is.na(df$Treatment), ]
+df =  df[!is.na(df$SBA_FC), ]
+
+mwu_test_fc <- wilcox.test(SBA_FC ~ Treatment, data = subset(df, Treatment %in% c("Early", "Late")), 
+                           na.rm = T,
+                           exact = F)
+
+df = df[complete.cases(df$SBA_FC), ]
+
+fc_t0t2_2 = ggplot(df, aes(x = `ART start`, y = SBA_FC, color = `ART start`)) +
+  geom_jitter(data = df, 
+              aes(fill = `ART start`, 
+                  size = SBA_T0), 
+              position = position_jitter(width = 0.2, 
+                                         height = .05),
+              alpha = .35) +  # Use a different shape for specific points
+  geom_hline(yintercept = 4, 
+             linetype = "dashed", 
+             color = "red", 
+             size = 1) +  # Add horizontal line
+  geom_text(x = 0.65, 
+            y = 4.3, 
+            label = paste0("SC=", sum(df$SBA_FC[df$`ART start` == "Early"] >= 4, na.rm = T), 
+                    " (", sum(df$SBA_FC[df$`ART start` == "Early"] >= 4, na.rm = T) / sum(df$`ART start` == "Early", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  geom_text(x = 1.65, 
+            y = 4.3, 
+            label = paste0("SC=", sum(df$SBA_FC[df$`ART start` == "Late"] >= 4, na.rm = T), 
+                            " (", round(sum(df$SBA_FC[df$`ART start` == "Late"] >= 4, na.rm = T)/sum(df$`ART start` == "Late", na.rm = TRUE) * 100, digits = 0), "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  geom_text(x = 0.65, 
+            y = -2, 
+            label = paste0("NSC=", sum(df$SBA_FC[df$`ART start` == "Early"] < 4, na.rm = T), 
+                            " (", sum(df$SBA_FC[df$`ART start` == "Early"] < 4, na.rm = T)/sum(df$`ART start` == "Early", na.rm = TRUE) * 100, "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  geom_text(x = 1.65, 
+            y = -2, 
+            label = paste0("NSC=", sum(df$SBA_FC[df$`ART start` == "Late"] < 4, na.rm = T), 
+                            " (", round(sum(df$SBA_FC[df$`ART start` == "Late"] < 4, na.rm = T)/sum(df$`ART start` == "Late", na.rm = TRUE) * 100, digits = 0), "%)"), 
+            size = 5,  
+            hjust = 0.5, 
+            vjust = -0.75, 
+            color = "black") +
+  stat_compare_means(comparisons = list(c("Early", "Late")), 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     exact = FALSE, 
+                     size = 6) +
+  stat_summary(fun.data = "mean_cl_boot", 
+               colour = "black", 
+               geom = "crossbar", 
+               width = 0.2) +
+  labs(x = "ART start", 
+       y = "hSBA FC T0-T2", 
+       title = "PHIV hSBA Fold Change T0-T2", 
+       color = "ART start") +
+  scale_color_manual(values = c("Early" = "darkcyan", 
+                                "Late" = "darkorange")) +
+  scale_fill_manual(values = c("Early" = "darkcyan", 
+                               "Late" = "darkorange")) +
+  scale_size_continuous(range = c(3, 26), 
+                        breaks = c(2, 4, 8, 16, 32, 64, 128, 256, 512)) +
+  guides(color = guide_legend(override.aes = list(size = 6))) +
+  guides(shape = guide_legend(override.aes = list(size = 6))) +
+  theme_classic(base_size = 30)
+
+
+combined_plot_fig2a <- grid.arrange(
+  grobs = list(plot_1, fc_tp_1, fc_t0t2_1, plot_2, fc_tp_2, fc_t0t2_2),
+  widths = c(1, 1, 1, 0.1),
+  layout_matrix = rbind(c(1, 2, 3, 3),
+                        c(4, 5, 6, 6)))
+ggsave(PATH,  combined_plot_fig2a , height = 20, width = 33, dpi = 600)
+
+############################################################################# FIGURE 3 ########################################################################################################
+
+df = men_cito_new_2
+#removal of rows with NA values in Freq
+df <- df %>% drop_na('Frequences of CD19+')
+df
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
+
+df <- merge(df, pro, by= c("StudyPID"), all.x = T)
+df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
+
+# Define the variables to loop over
+variables_to_plot <- c("StudyPID", 
+                       "Lab date.x", 
+                       "Group.x",
+                       'Frequences of CD19+.x',
+                       'Frequences of CD19+ CD27-IgD+ (Naive)',
+                       'Frequences of CD19+ CD27+IgD+ (unsw.memory)',
+                       'Frequences of CD19+ CD27+IgD- (sw.memory)',
+                       'Frequences of CD19+ CD27-IgD- (double negative)',
+                       'Frecquences of CD27+ CD21- (Activated Memory)',
+                       'Frecquences of CD27- CD21- (Tissue like Memory)')
+
+df = df[, variables_to_plot]
+
+colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
+colnames(df) <- gsub("Frequences of ", "", colnames(df))
+#rimuovo errore alessia
+colnames(df)<- gsub("Frecquences of ", "", colnames(df))
+colnames(df)<- gsub("\\.x", "", colnames(df))
+colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ CD19+ CD27+IgD-IgG+ (Switched Memory)", colnames(df))
+
+colnames(df) = c("StudyPID","Lab date","Group","CD19+", "CD27-IgD+ (Naive)","CD27+IgD+ (USM)","CD27+IgD- (SM)","CD27-IgD- (DN)","CD27+CD21- (AM)", "CD27-CD21- (TLM)")
+
+# Reshape the data into a long format
+df_long <- df %>%
+  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Group))
+
+#clean value
+df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
+
+# Reorder the levels of the cell_populations variable
+order = c("CD19+", 
+  "CD27-IgD+ (Naive)",
+  "CD27+IgD+ (USM)",
+  "CD27+IgD- (SM)",
+  "CD27-IgD- (DN)",
+  "CD27+CD21- (AM)",
+  "CD27-CD21- (TLM)")
+
+df_long$cell_populations <- factor(df_long$cell_populations, levels = order)
+
+df_long$Group = as.factor(df_long$Group)
+
+# Plot for CD19+ variable
+plot_cd19 <- ggplot(df_long[df_long$cell_populations == "CD19+", ], 
+                    aes(x = cell_populations, y = frequencies, fill = Group)) +
+  geom_violin(position = position_dodge(width = 1), 
+              scale = "width", 
+              alpha = 0.7) +
+  geom_boxplot(width = 0.2, 
+               position = position_dodge(width = 1), 
+               alpha = 0) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  geom_jitter(shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 1)) +
+  stat_compare_means(aes(group = Group), 
+                     size = 6, 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     vjust = -.5) +
+  geom_segment(aes(x = 0.8, xend = 1.2, y = 90, yend = 90)) +
+  xlab("") +
+  ylab("% of Lymphocytes") +
+  labs(fill = "Group    ") +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+        #axis.text.x = element_blank(),
+        axis.text.y = element_text(hjust = 1, size = 20),
+        axis.title.y = element_text(size = 25),
+        plot.margin = margin(10, 10, 61.5, 10, unit = "pt"),
+        panel.spacing = unit(10, "pt"))
+
+# Plot for remaining variables
+plot_remaining <- ggplot(df_long[df_long$cell_populations != "CD19+", ], 
+                         aes(x = cell_populations, y = frequencies, fill = Group)) +
+  geom_violin(position = position_dodge(width = 1), 
+              scale = "width", 
+              alpha = 0.7) +
+  geom_boxplot(width = 0.2, 
+               position = position_dodge(width = 1), 
+               alpha = 0) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  geom_jitter(shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 1)) +
+  stat_compare_means(aes(group = Group), 
+                     size = 6, 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     vjust = -.5) +
+  geom_segment(aes(x=0.8, xend=1.2, y=90, yend=90)) +
+  geom_segment(aes(x=1.8, xend=2.2, y=90, yend=90)) +
+  geom_segment(aes(x=2.8, xend=3.2, y=90, yend=90)) +
+  geom_segment(aes(x=3.8, xend=4.2, y=90, yend=90)) +
+  geom_segment(aes(x=4.8, xend=5.2, y=90, yend=90)) +
+  geom_segment(aes(x=5.8, xend=6.2, y=90, yend=90)) +
+  xlab("") +
+  ylab("% of B cells") +
+  labs(fill = "Group    ") +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+        #axis.text.x = element_blank(),
+        axis.text.y = element_text(hjust = 1, size = 20),
+        axis.title.y = element_text(size = 25),
+        plot.margin = margin(10, 10, 0, 10, unit = "pt"),
+        panel.spacing = unit(10, "pt")) +
+  scale_y_continuous(position = "right") +
+  theme(legend.position = "none", )
+
+# Combine the plots
+
+merged_plot <- ggarrange(plot_cd19, plot_remaining, 
+                         nrow = 1, 
+                         ncol = 2, 
+                         widths = c(.3, 1.1), 
+                         common.legend = TRUE, 
+                         legend = "right")
+
+######## VIOLIN TREATMENT
+
+df = men_cito_new_2
+
+#removal of rows with NA values in Freq
+df <- df %>% drop_na('Frequences of CD19+')
+
+#merge con freq old
+pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
+
+df <- merge(df, pro, by= c("StudyPID"), all.x = T)
+df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
+df <- merge(df, men_treatment, by = c("StudyPID"), all.x = T)
+
+df <- df[!is.na(df$Treatment), ]
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
+
+# Define the variables to loop over
+variables_to_plot <- c("StudyPID", 
+                       "Lab date.x", 
+                       #"Group.x",
+                       "Treatment",
+                       'Frequences of CD19+.x',
+                       'Frequences of CD19+ CD27-IgD+ (Naive)',
+                       'Frequences of CD19+ CD27+IgD+ (unsw.memory)',
+                       'Frequences of CD19+ CD27+IgD- (sw.memory)',
+                       'Frequences of CD19+ CD27-IgD- (double negative)',
+                       'Frecquences of CD27+ CD21- (Activated Memory)',
+                       'Frecquences of CD27- CD21- (Tissue like Memory)')
+                       
+df = df[, variables_to_plot]
+
+colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
+colnames(df) <- gsub("Frequences of ", "", colnames(df))
+
+#rimuovo errore alessia
+colnames(df)<- gsub("Frecquences of ", "", colnames(df))
+colnames(df)<- gsub("\\.x", "", colnames(df))
+colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ CD27+IgD-IgG+ (Switched Memory)", colnames(df))
+
+colnames(df) = c("StudyPID",
+                 "Lab date",
+                 "Treatment",
+                 "CD19+", 
+                 "CD27-IgD+ (Naive)",
+                 "CD27+IgD+ (USM)",
+                 "CD27+IgD- (SM)",
+                 "CD27-IgD- (DN)",
+                 "CD27+CD21- (AM)", 
+                 "CD27-CD21- (TLM)")
+
+
+# Reshape the data into a long format
+df_long <- df %>%
+  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Treatment))
+
+#clean value
+df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
+
+# Reorder the levels of the cell_populations variable
+order = c("CD19+", 
+          "CD27-IgD+ (Naive)",
+          "CD27+IgD+ (USM)",
+          "CD27+IgD- (SM)",
+          "CD27-IgD- (DN)",
+          "CD27+CD21- (AM)",
+          "CD27-CD21- (TLM)")
+          
+df_long$cell_populations <- factor(df_long$cell_populations, levels = order)
+
+df_long$Treatment = as.factor(df_long$Treatment)
+
+# Plot for CD19+ variable
+plot_cd19_2 <- ggplot(df_long[df_long$cell_populations == "CD19+", ], 
+                    aes(x = cell_populations, y = frequencies, fill = Treatment)) +
+  geom_violin(position = position_dodge(width = 1), 
+              scale = "width", 
+              alpha = 0.7) +
+  geom_boxplot(width = 0.2, 
+               position = position_dodge(width = 1), 
+               alpha = 0) +
+  scale_fill_manual(values = c("Early" = "darkcyan", "Late" = "darkorange")) +
+  geom_jitter(shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 1)) +
+  stat_compare_means(aes(group = Treatment), 
+                     size = 6, 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     vjust = -.5) +
+  geom_segment(aes(x = 0.8, xend = 1.2, y = 90, yend = 90)) +
+  xlab("") +
+  ylab("% of Lymphocytes") +
+  labs(fill = "ART start") +
+  #ggtitle("CD19+ B-cell Subset by Groups") +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+        axis.text.y = element_text(hjust = 1, size = 20),
+        axis.title.y = element_text(size = 25),
+        plot.margin = margin(10, 10, 61.5, 10, unit = "pt"),
+        panel.spacing = unit(10, "pt"))
+
+# Plot for remaining variables
+plot_remaining_2 <- ggplot(df_long[df_long$cell_populations != "CD19+", ], 
+                         aes(x = cell_populations, y = frequencies, fill = Treatment)) +
+  geom_violin(position = position_dodge(width = 1), 
+              scale = "width", 
+              alpha = 0.7) +
+  geom_boxplot(width = 0.2, 
+               position = position_dodge(width = 1), 
+               alpha = 0) +
+  scale_fill_manual(values = c("Early" = "darkcyan", "Late" = "darkorange")) +
+  geom_jitter(shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 1)) +
+  stat_compare_means(aes(group = Treatment), 
+                     size = 6, 
+                     label = "p.format", 
+                     method = "wilcox.test", 
+                     vjust = -.5) +
+  geom_segment(aes(x=0.8, xend=1.2, y=90, yend=90)) +
+  geom_segment(aes(x=1.8, xend=2.2, y=90, yend=90)) +
+  geom_segment(aes(x=2.8, xend=3.2, y=90, yend=90)) +
+  geom_segment(aes(x=3.8, xend=4.2, y=90, yend=90)) +
+  geom_segment(aes(x=4.8, xend=5.2, y=90, yend=90)) +
+  geom_segment(aes(x=5.8, xend=6.2, y=90, yend=90)) +
+  xlab("") +
+  ylab("% of B cells") +
+  labs(fill = "ART start") +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 15),
+        axis.text.y = element_text(hjust = 1, size = 20),
+        axis.title.y = element_text(size = 25),
+        plot.margin = margin(10, 10, 0, 10, unit = "pt"),
+        panel.spacing = unit(10, "pt")) +
+  scale_y_continuous(position = "right") +
+  theme(legend.position = "none")
+
+# Combine the plots
+
+merged_plot_2 <- ggarrange(plot_cd19_2, plot_remaining_2, 
+                         nrow = 1, 
+                         ncol = 2, 
+                         widths = c(.3, 1.1), 
+                         common.legend = TRUE, 
+                         legend = "right")
+
+combined_vio = grid.arrange(merged_plot, merged_plot_2, ncol = 1) #v2
+ggsave(PATH, combined_vio, height = 16, width = 16, dpi = 600)
+
+############################################################################# FIGURE 4B ########################################################################################################
+orig_locale <- Sys.getlocale("LC_NUMERIC")
+Sys.setlocale("LC_NUMERIC", "C")
+
+df = men_cito_new
+df$Group <- gsub("HIV", "PHIV", df$Group)
+
+#removal of rows with NA values in Freq
+df <- df %>% drop_na('Frequences of CD19+')
+
+#merge con freq old
+pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
+
+df <- merge(df, pro, by= c("StudyPID"), all.x = T)
+df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
+
+# Define the variables to loop over
+variables_to_plot <- c("StudyPID", 
+                       "Lab date.x", 
+                       "Group.x",
+                       'Frecquences of Ag specifiche on CD27+ CD21- (Activated Memory)',
+                       'Frecquences of Ag specifiche on CD27- CD21- (Tissue like Memory)',
+                       'Frequences of sw.memory IgG+fHbp+ (Ag spec)'
+                       )
+
+df = df[, variables_to_plot]
+
+colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
+colnames(df) <- gsub("Frequences of ", "", colnames(df))
+#rimuovo errore alessia
+colnames(df)<- gsub("Frecquences of ", "", colnames(df))
+colnames(df)<- gsub("\\.x", "", colnames(df))
+colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ SM", colnames(df))
+colnames(df) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df), ignore.case = TRUE)
+colnames(df) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df), ignore.case = TRUE)
+
+
+# Reshape the data into a long format
+df_long <- df %>%
+  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Group))
+
+#clean value
+df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
+
+# Reorder the levels of the cell_populations variable
+order = c("fHbp+ SM",
+          "fHbp+ AM",
+          "fHbp+ TLM")
+
+df_long$cell_populations <- factor(df_long$cell_populations, levels = order)
+
+df_long$Group = as.factor(df_long$Group)
+
+el_plot_1 = ggplot(df_long, aes(x = cell_populations, y = frequencies, fill = Group)) +
+  geom_violin(position = position_dodge(width = 1), 
+              scale = "width", 
+              alpha = 0.7) +
+  geom_boxplot(width = 0.2, 
+               position = position_dodge(width = 1), 
+               alpha = 0) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  geom_jitter(shape = 16, 
+              position = position_jitterdodge(jitter.width = 0.2, dodge.width = 1)) +
+  stat_compare_means(aes(group = Group), 
+                     label = "p.format", 
+                     size = 5, 
+                     method = "wilcox.test") +
+  xlab("") +
+  ylab("Frequency (%)") +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_blank()) +
+  facet_wrap(~ cell_populations, scales = "free", ncol = 3) +
+  theme(strip.text = element_text(size = 25))
+
+ggsave(PATH, el_plot_1, height = 6, width = 18, dpi = 600)
+
+############################################################################# FIGURE 4C & 4D ########################################################################################################
+
+df = as.data.frame(men_sba) 
+df <- merge(df, men_cito_new, all.x = T)
+df <- merge(df, men_cito_new_2, all.x = T)
+df <- merge(df, men_treatment, all.x = T)
+df <- merge(df, men_clin, all.x = T)
+
+# Pivot the dataframe to the wide format
+igg_wide <- pivot_wider(men_igg, 
+                       id_cols = StudyPID, 
+                       names_from = Ag, 
+                       values_from = c(T0, T2), 
+                       names_sep = "_"
+)
+
+# Rename the columns to match the desired format
+colnames(igg_wide) <- c("StudyPID", "fHbp_T0", "NadA_T0", "NHBA_T0", "fHbp_T2", "NadA_T2", "NHBA_T2")
+
+df <- merge(df, igg_wide, all.x = T)
+
+#merge con freq old
+pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
+
+df <- merge(df, pro, by= c("StudyPID"), all.x = T)
+
+df$SBA_res = ifelse(df$SBA_T2 >= 4*df$SBA_T0, "R", "UR")
+Grp_levels <- levels(factor(df$Group.x))
+resp_levels = levels(factor(df$SBA_res))
+df$Grp <- factor(df$Group.x, levels = Grp_levels)
+df$SBA_res = factor(df$SBA_res, levels = resp_levels)
+df$SBA_FC = df$SBA_T2 / df$SBA_T0
+df$fHbp_FC = df$fHbp_T2 / df$fHbp_T0
+df$NHBA_FC = df$NHBA_T2 / df$NHBA_T0
+df$NadA_FC = df$NadA_T2 / df$NadA_T0
+
+
+# Define the variables to loop over
+variables_to_plot <- c('fHbp_T2',
+                       'fHbp_FC', 
+                       'NadA_T2',
+                       'NadA_FC',
+                       'NHBA_T2',
+                       'NHBA_FC',
+                       'SBA_T2',
+                       'SBA_FC',
+                       'Frequences of sw.memory IgG+fHbp+ (Ag spec)',
+                       'Frecquences of Ag specifiche on CD27+ CD21- (Activated Memory)',
+                       'Frecquences of Ag specifiche on CD27- CD21- (Tissue like Memory)')
+                       )
+
+####HC
+df_hc = df[df$Group.x == "HC",][variables_to_plot]
+
+for (i in colnames(df_hc)[9:length(colnames(df_hc))]) {
+  df_hc[, i] = as.numeric(gsub(",", ".", df_hc[, i]))
+}
+
+df_hc[, variables_to_plot] <- lapply(df_hc[, variables_to_plot], as.numeric)
+
+colnames(df_hc) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_hc))
+#rimuovo errore alessia
+colnames(df_hc)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_hc))
+colnames(df_hc)<- gsub("Frecquences", "Frequency", colnames(df_hc))
+colnames(df_hc)<- gsub("Ag ", "fHbp+ ", colnames(df_hc))
+colnames(df_hc)<- gsub("\\.x", "", colnames(df_hc))
+colnames(df_hc) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hc))
+colnames(df_hc) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hc))
+colnames(df_hc) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_hc))
+colnames(df_hc) <- gsub("SBA", "hSBA", colnames(df_hc))
+
+
+# Compute correlation matrix only HIV
+cor_hc_mat <- cor(df_hc, use = "pairwise.complete.obs")
+p_values_hc = cor.mtest(df_hc, use = "pairwise.complete.obs")$p
+
+####HIV
+
+df_hiv = df[df$Group.x == "HIV",][variables_to_plot]
+
+for (i in colnames(df_hiv)[9:length(colnames(df_hiv))]) {
+  df_hiv[, i] = as.numeric(gsub(",", ".", df_hiv[, i]))
+}
+
+df_hiv[, variables_to_plot] <- lapply(df_hiv[, variables_to_plot], as.numeric)
+
+colnames(df_hiv) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_hiv))
+#rimuovo errore alessia
+colnames(df_hiv)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_hiv))
+colnames(df_hiv)<- gsub("Frecquences", "Frequency", colnames(df_hiv))
+colnames(df_hiv)<- gsub("Ag ", "fHbp+ ", colnames(df_hiv))
+colnames(df_hiv)<- gsub("\\.x", "", colnames(df_hiv))
+colnames(df_hiv) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hiv))
+colnames(df_hiv) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hiv))
+colnames(df_hiv) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_hiv))
+colnames(df_hiv) <- gsub("SBA", "hSBA", colnames(df_hiv))
+
+
+# Compute correlation matrix only HIV
+cor_hiv_mat <- cor(df_hiv, use = "pairwise.complete.obs")
+p_values_hiv = cor.mtest(df_hiv, use = "pairwise.complete.obs")$p
+
+####EARLY
+
+df_early = df[df$Treatment == "early treated",][variables_to_plot]
+
+for (i in colnames(df_early)[9:length(colnames(df_early))]) {
+  df_early[, i] = as.numeric(gsub(",", ".", df_early[, i]))
+}
+
+df_early[, variables_to_plot] <- lapply(df_early[, variables_to_plot], as.numeric)
+
+colnames(df_early) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_early))
+#rimuovo errore alessia
+colnames(df_early)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_early))
+colnames(df_early)<- gsub("Frecquences", "Frequency", colnames(df_early))
+colnames(df_early)<- gsub("Ag ", "fHbp+ ", colnames(df_early))
+colnames(df_early)<- gsub("\\.x", "", colnames(df_early))
+colnames(df_early) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_early))
+colnames(df_early) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_early))
+colnames(df_early) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_early))
+colnames(df_early) <- gsub("SBA", "hSBA", colnames(df_early))
+
+
+# Compute correlation matrix only HIV
+cor_early_mat <- cor(df_early, use = "pairwise.complete.obs")
+p_values_early = cor.mtest(df_early, use = "pairwise.complete.obs")$p
+
+####LATE
+
+df_late = df[df$Treatment == "late treated",][variables_to_plot]
+
+for (i in colnames(df_late)[9:length(colnames(df_late))]) {
+  df_late[, i] = as.numeric(gsub(",", ".", df_late[, i]))
+}
+
+df_late[, variables_to_plot] <- lapply(df_late[, variables_to_plot], as.numeric)
+
+colnames(df_late) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_late))
+#rimuovo errore alessia
+colnames(df_late)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_late))
+colnames(df_late)<- gsub("Frecquences", "Frequency", colnames(df_late))
+colnames(df_late)<- gsub("Ag ", "fHbp+ ", colnames(df_late))
+colnames(df_late)<- gsub("\\.x", "", colnames(df_late))
+colnames(df_late) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_late))
+colnames(df_late) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_late))
+colnames(df_late) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_late))
+colnames(df_late) <- gsub("SBA", "hSBA", colnames(df_late))
+
+# Compute correlation matrix only HIV
+cor_late_mat <- cor(df_late, use = "pairwise.complete.obs")
+p_values_late = cor.mtest(df_late, use = "pairwise.complete.obs")$p
+
+######### HIV vs HC
+
+# List of variable names to process
+variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2")
+process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
+  cat("Processing variable:", variable_name, "\n")
+  
+  cor_data1$Group <- "PHIV"
+  cor_data2$Group <- "HC"
+  cor_data1$variables <- rownames(cor_data1)
+  cor_data2$variables <- rownames(cor_data2)
+  
+  pval_data1$Group <- "PHIV"
+  pval_data2$Group <- "HC"
+  pval_data1$variables <- rownames(pval_data1)
+  pval_data2$variables <- rownames(pval_data2)
+  
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                            idvar = "Group", 
+                            timevar = "variables", 
+                            direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                            idvar = "Group", 
+                            timevar = "variables", 
+                            direction = "wide")
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                             idvar = "Group", 
+                             timevar = "variables", 
+                             direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                             idvar = "Group", 
+                             timevar = "variables", 
+                             direction = "wide")
+  
+  combined_data <- rbind(cor_data1_wide, cor_data2_wide)
+  combined_data$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_data) <- combined_data$Group
+  
+  
+  combined_pval <- rbind(pval_data1_wide, pval_data2_wide)
+  combined_pval$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_pval) <- combined_pval$Group
+  
+  
+  return(list(combined_data, combined_pval))
+}
+# List to store the processed data for each variable
+processed_data_list <- lapply(variable_names, function(var) {
+  cor_data1 <- data.frame(cor_hiv_mat)
+  cor_data2 <- data.frame(cor_hc_mat)
+  pval_data1 <- data.frame(p_values_hiv)
+  pval_data2 <- data.frame(p_values_hc)
+  
+  process_variable_data(cor_data1, cor_data2, pval_data1, pval_data2, var)
+})
+
+# Extract the combined data frames and p-value data frames from the processed_data_list
+combined_data_list <- lapply(processed_data_list, function(res) as.matrix(res[[1]]))
+combined_pval_list <- lapply(processed_data_list, function(res) as.matrix(res[[2]]))
+
+# Merge the combined data frames and p-value data frames into one single data frame
+combined_data <- as.data.frame(do.call(rbind, combined_data_list))
+combined_pval <- as.data.frame(do.call(rbind, combined_pval_list))
+
+
+# Convert all non-numeric columns in combined_data to numeric
+combined_data[, 2:(dim(combined_data)[2] - 1)] <- lapply(
+  combined_data[, 2:(dim(combined_data)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+# Convert all non-numeric columns in combined_pval to numeric
+combined_pval[, 2:(dim(combined_pval)[2] - 1)] <- lapply(
+  combined_pval[, 2:(dim(combined_pval)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+
+# Recode p-values into different categories
+combined_pval[combined_pval <= 0.001] <- "***"
+combined_pval[0.001 < combined_pval & combined_pval <= 0.014] <- "**"
+combined_pval[combined_pval <= 0.054 & combined_pval > 0.014] <- "*"
+combined_pval[combined_pval > 0.055] <- " "
+
+# Remove the common prefix "fHbp_T2." from all column names
+colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
+
+colnames(combined_data)<- gsub("Frequences of ", "", colnames(combined_data))
+colnames(combined_data)<- gsub("Frequency of ", "", colnames(combined_data))
+colnames(combined_data)<- gsub("Frequences of sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_data))
+
+colnames(combined_pval)<- gsub("Frequences of ", "", colnames(combined_pval))
+colnames(combined_pval)<- gsub("Frequency of ", "", colnames(combined_pval))
+colnames(combined_pval)<- gsub("sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_pval))
+
+# Apply the same color scheme for annotations as before
+annot <- data.frame(Ag = combined_data$Ag, Group = combined_data$Group, row.names = rownames(combined_data))
+
+colnames(annot)[2] <- "Group    "
+
+annoCol <- list(Ag = c(fHbp = "yellow", NHBA = "turquoise", NadA = "#CC99FF", hSBA = "#99FF99"), 
+                "Group    " = c(HC = "blue", PHIV = "red"))
+
+
+# Create the pheatmap plot
+cor_hm_hivhc = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
+                  annotation_col = annot, 
+                  annotation_colors = annoCol,
+                  cellheight = 25,
+                  cluster_rows = FALSE, 
+                  scale = "none",
+                  show_colnames = F,
+                  fontsize = 12,
+                  fontsize_number = 25, 
+                  display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]))
+png("Figure_4C.png", units = "in", width = 10, height = 6, res = 600)
+
+cor_hm_hivhc
+dev.off()
+
+############# Early vs Late
+
+# List of variable names to process
+variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2")
+process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
+  cat("Processing variable:", variable_name, "\n")
+  
+  cor_data1$Group <- "Early"
+  cor_data2$Group <- "Late"
+  cor_data1$variables <- rownames(cor_data1)
+  cor_data2$variables <- rownames(cor_data2)
+  
+  pval_data1$Group <- "Early"
+  pval_data2$Group <- "Late"
+  pval_data1$variables <- rownames(pval_data1)
+  pval_data2$variables <- rownames(pval_data2)
+  
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                            idvar = "Group", 
+                            timevar = "variables", 
+                            direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                            idvar = "Group", 
+                            timevar = "variables", 
+                            direction = "wide")
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                             idvar = "Group", 
+                             timevar = "variables", 
+                             direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
+                             idvar = "Group", 
+                             timevar = "variables", 
+                             direction = "wide")
+  
+  combined_data <- rbind(cor_data1_wide, cor_data2_wide)
+  combined_data$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_data) <- combined_data$Group
+  
+  
+  combined_pval <- rbind(pval_data1_wide, pval_data2_wide)
+  combined_pval$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_pval) <- combined_pval$Group
+  
+  
+  return(list(combined_data, combined_pval))
+}
+# List to store the processed data for each variable
+processed_data_list <- lapply(variable_names, function(var) {
+  cor_data1 <- data.frame(cor_early_mat)
+  cor_data2 <- data.frame(cor_late_mat)
+  pval_data1 <- data.frame(p_values_early)
+  pval_data2 <- data.frame(p_values_late)
+
+  process_variable_data(cor_data1, cor_data2, pval_data1, pval_data2, var)
+})
+
+# Extract the combined data frames and p-value data frames from the processed_data_list
+combined_data_list <- lapply(processed_data_list, function(res) as.matrix(res[[1]]))
+combined_pval_list <- lapply(processed_data_list, function(res) as.matrix(res[[2]]))
+
+# Merge the combined data frames and p-value data frames into one single data frame
+combined_data <- as.data.frame(do.call(rbind, combined_data_list))
+combined_pval <- as.data.frame(do.call(rbind, combined_pval_list))
+
+
+# Convert all non-numeric columns in combined_data to numeric
+combined_data[, 2:(dim(combined_data)[2] - 1)] <- lapply(
+  combined_data[, 2:(dim(combined_data)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+# Convert all non-numeric columns in combined_pval to numeric
+combined_pval[, 2:(dim(combined_pval)[2] - 1)] <- lapply(
+  combined_pval[, 2:(dim(combined_pval)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+
+
+# Recode p-values into different categories
+combined_pval[combined_pval <= 0.001] <- "***"
+combined_pval[0.001 < combined_pval & combined_pval <= 0.014] <- "**"
+combined_pval[combined_pval <= 0.054 & combined_pval > 0.014] <- "*"
+combined_pval[combined_pval > 0.055] <- " "
+
+# Remove the common prefix "fHbp_T2." from all column names
+colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
+
+colnames(combined_data)<- gsub("Frequences of ", "", colnames(combined_data))
+colnames(combined_data)<- gsub("Frequency of ", "", colnames(combined_data))
+colnames(combined_data)<- gsub("Frequences of sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_data))
+
+colnames(combined_pval)<- gsub("Frequences of ", "", colnames(combined_pval))
+colnames(combined_pval)<- gsub("Frequency of ", "", colnames(combined_pval))
+colnames(combined_pval)<- gsub("sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_pval))
+
+# Apply the same color scheme for annotations as before
+annot <- data.frame(Ag = combined_data$Ag, Treatment = combined_data$Group, row.names = rownames(combined_data))
+
+colnames(annot)[2] <- "ART start"
+
+annoCol <- list(Ag = c(fHbp = "yellow", NHBA = "turquoise", NadA = "#CC99FF", hSBA = "#99FF99"), 
+                "ART start" = c(Early = "darkcyan", Late = "darkorange"))
+
+
+# Create the pheatmap plot
+cor_hm_el = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
+         annotation_col = annot, 
+         annotation_colors = annoCol,
+         cellheight = 25,
+         cluster_rows = FALSE, 
+         scale = "none",
+         show_colnames = F,
+         fontsize = 12,
+         fontsize_number = 25, 
+         display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]),
+         margin = c(10,10))
+
+png("Figure_4D.png", units = "in", width = 10, height = 6, res = 600)
+
+cor_hm_el
+dev.off()
+
+############################################################################# FIGURE 5 ########################################################################################################
+
+base = exprs(raw_m)
+colnames(base) = rownames(pData(raw_m))
+samples <- pData(raw_m)[, c(1,3,4,5, 22)]
+samples = na.omit(samples)
+samples
+samples$pairs = str_c(samples$Grp, "_", samples$Cond)
+
+samples$full = str_c(samples$pairs, "_", samples$SBA_res)
+
+#I pid non servono perchè li metto nel duplicate corr con block
+pids = samples$StudyPID
+
+gruppi = samples$pairs
+gruppi = samples$full
+
+response= samples$SBA_res
+#ages = samples$Age_T2
+gender = samples$Gender
+gruppi
+# Define the factor levels for each variable
+levels(pids) <- levels(factor(pids))
+levels(gruppi)<- levels(factor(gruppi))
+#levels(subpop) <- levels(factor(subpop))
+levels(response) <- levels(factor(response))
+levels(gender) = levels(factor(gender))
+samples
+
+for (levels in levels(gruppi)) {
+  print(levels)
+  print(length(grep(levels, gruppi, value = FALSE)))
+}
+
+###R vs UR in HIV
+design <- model.matrix(~ 0 + gruppi + pids, 
+                       data = as.data.frame(base))
+
+contrasts_men <- makeContrasts(
+  #HIV vs HC
+  HIV_CD19_RvsHIV_CD19_UR = gruppiHIV_CD19_R-gruppiHIV_CD19_UR,
+  HC_CD19_RvsHC_CD19_UR = gruppiHC_CD19_R-gruppiHC_CD19_UR,
+  HIV_CD19_RvsHC_CD19_R = gruppiHIV_CD19_R-gruppiHC_CD19_R,
+  HIV_CD19_URvsHC_CD19_UR = gruppiHIV_CD19_UR-gruppiHC_CD19_UR,
+  HIV_Naive_RvsHIV_Naive_UR = gruppiHIV_Naive_R-gruppiHIV_Naive_UR,
+  HC_Naive_RvsHC_Naive_UR = gruppiHC_Naive_R-gruppiHC_Naive_UR,
+  HIV_Naive_RvsHC_Naive_R = gruppiHIV_Naive_R-gruppiHC_Naive_R,
+  HIV_Naive_URvsHC_Naive_UR = gruppiHIV_Naive_UR-gruppiHC_Naive_UR,
+  HIV_NotAg_RvsHIV_NotAg_UR = gruppiHIV_NotAg_R-gruppiHIV_NotAg_UR,
+  HC_NotAg_RvsHC_NotAg_UR = gruppiHC_NotAg_R-gruppiHC_NotAg_UR,
+  HIV_NotAg_RvsHC_NotAg_R = gruppiHIV_NotAg_R-gruppiHC_NotAg_R,
+  HIV_NotAg_URvsHC_NotAg_UR = gruppiHIV_NotAg_UR-gruppiHC_NotAg_UR,
+  HIV_Ag_RvsHIV_Ag_UR = gruppiHIV_Ag_R-gruppiHIV_Ag_UR,
+  HC_Ag_RvsHC_Ag_UR = gruppiHC_Ag_R-gruppiHC_Ag_UR,
+  HIV_Ag_RvsHC_Ag_R = gruppiHIV_Ag_R-gruppiHC_Ag_R,
+  HIV_Ag_URvsHC_Ag_UR = gruppiHIV_Ag_UR-gruppiHC_Ag_UR,
+  levels = colnames(design))
+
+fit <- lmFit(select(as.data.frame(base), c(rownames(samples))),
+             design)
+fit2 <- contrasts.fit(fit, contrasts_men)
+fit2 <- eBayes(fit2,robust = TRUE, trend = TRUE)
+# Prepare output
+out <- list()
+
+if (!missing(contrasts_men)) {
+  coefs <- colnames(contrasts_men)
+  cont <- design %*% contrasts_men
+} else {
+  coefs <- colnames(design)
+  cont <- design
+}
+
+
+# Brief summary across all contrasts/tests
+res <- decideTests(fit2)
+res
+rownames(res) <- rownames(topTable(fit2, sort="none", n=nrow(fit2)))
+out[["Summary"]] <- res
+out
+colnames(out$Summary[, colSums(out$Summary != 0) > 0])
+
+volcano_list <- list()
+diff_genes = list ()
+#topTable(fit2, number = 30, adjust = "BH")      
+for (coef in colnames(out$Summary)) {
+  print(coef)
+  if (coef == "HC_Ag_RvsHC_Ag_UR"){
+    titlenam = "fHbp+ Sw.Memory DEGs profile in HC SC vs NSC"
+    ydx = 4
+    
+  } else if (coef == "HIV_Ag_RvsHIV_Ag_UR") {
+    titlenam = "fHbp+ Sw.Memory DEGs profile in HIV SC vs NSC"
+    ydx = 3.5
+    }
+  else {
+    titlenam = "fHbp+ Sw.Memory DEGs profile in HIV NSC vs HC NSC"
+    ydx = 4.5
+  }
+  # Extract a table of differentially expressed genes
+  tab <- topTable(fit2, coef=coef, number=Inf, adjust = "BH")
+  print(tab)
+  # Adjust p-values for multiple testing
+  #tab$p.value <- p.adjust(tab$p.value, method="BH")
+  
+  # Extract differentially expressed genes
+  de_genes <- tab %>%
+    filter(adj.P.Val < 0.054) #%>%
+    #filter(abs(logFC) > 1.5)
+  
+  # Extract differentially expressed genes
+  diff_genes[[coef]] <- de_genes
+  # Print the differentially expressed genes
+  print(de_genes)
+  keyvals.colour <- ifelse(
+    tab$logFC <= -1.5 & tab$adj.P.Val <= 0.054, 'orchid4',
+    ifelse(tab$logFC >= 1.5 & tab$adj.P.Val <= 0.054, 'yellowgreen',
+           ifelse(abs(tab$logFC) > 1.5 & tab$P.Val <= 0.054, 'gray67',
+                  'gray67')))
+                  keyvals.colour[is.na(keyvals.colour)] <- 'gray67'
+                    names(keyvals.colour)[keyvals.colour == 'yellowgreen'] <- 'Upregulated'
+                    names(keyvals.colour)[keyvals.colour == 'gray67'] <- 'NS'
+                    #names(keyvals.colour)[keyvals.colour == 'gray42'] <- 'P-unadj'
+                    names(keyvals.colour)[keyvals.colour == 'orchid4'] <- 'Downregulated'
+                    
+                    volcano_plot = EnhancedVolcano(tab,
+                                                   lab = rownames(tab),
+                                                   x = "logFC",
+                                                   y = "adj.P.Val",
+                                                   ylim = c(0, ydx),#11 o 17   #5 per le Ag HIv e HC
+                                                   #title = "DEG in pTFH of Responder vs Non-Responder after STIM",   
+                                                   title = "",#titlenam,#paste("Ag+ Sw.Memory DEGs profile in HC R"), #coef
+                                                   titleLabSize = 15,
+                                                   subtitle = "",#"Differential expression (limma)",
+                                                   caption = bquote("Cutoffs: "~Log[2]~ "FC: 1.5 ; p-value" [adj] ~ ": 0.05"),
+                                                   captionLabSize = 10,
+                                                   colCustom = keyvals.colour,
+                                                   boxedLabels = TRUE,
+                                                   drawConnectors = TRUE,
+                                                   legendPosition = 'bottom',
+                                                   widthConnectors = 0.75,
+                                                   colConnectors = 'black',
+                                                   gridlines.major = FALSE,
+                                                   gridlines.minor = FALSE,
+                                                   cutoffLineWidth = 0.8,
+                                                   pCutoff = 0.054,
+                                                   FCcutoff = 1.5,
+                                                   pointSize = 4,
+                                                   labSize = 7, 
+                                                   #legendLabSize = 20,
+                                                   #legendIconSize = 5,
+                                                   #axisLabSize = 25,
+                                                   colAlpha = 1
+                    )
+                    volcano_plot <- volcano_plot + theme_classic(base_size = 30)
+                    
+                    volcano_list[[coef]] <- volcano_plot
+}
+
+vol_1 = volcano_list[14]$HC_Ag_RvsHC_Ag_UR
+vol_2 = volcano_list[13]$HIV_Ag_RvsHIV_Ag_UR
+vol_3 = volcano_list[16]$HIV_Ag_URvsHC_Ag_UR
+
+# Hide legends in vol_2 and vol_3 plots
+vol_1 <- vol_1 + theme(legend.position = "none")
+vol_2 <- vol_2 + theme(legend.position = "bottom") + guides(color = guide_legend(title = "", override.aes = list(size = 5)))
+vol_3 <- vol_3 + theme(legend.position = "none")
+
+
+plprov_h = vol_1 + plot_spacer() + vol_2 + plot_spacer() + vol_3 + plot_layout(widths = c(1, 0.1, 1, 0.1, 1))
+
+ggsave("Figure_5_top.png", plprov_h, height = 12, width = 25, dpi = 600)
+
+
