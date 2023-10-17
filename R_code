@@ -73,11 +73,10 @@ test_group_difference <- function(df, group_col, selected_col) {
 
 ############################################################################# FIGURE 2 ########################################################################################################
 
-######## COMBINED HC-HIV hSBA CUTOFFS CURVES
+######## Figure 2A: COMBINED HC-HIV hSBA CUTOFFS CURVES
 df = as.data.frame(men_sba)
-df$Group <- gsub("HIV", "PHIV", df$Group)
 
-  df = df %>% 
+df = df %>% 
   rename(
     T0 = SBA_T0,
     T2 = SBA_T2
@@ -154,12 +153,10 @@ plot_1 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = Group)) +
   theme_classic(base_size = 30) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
-######## COMBINED HIV
+######## Figure 2D: COMBINED HIV
 df = as.data.frame(men_sba)
-df <- merge(df, men_treatment, all.x = T)
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
-df$Group <- gsub("HIV", "PHIV", df$Group)
 
 df = df %>% 
   rename(
@@ -243,10 +240,9 @@ plot_2 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = `ART start`, li
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
 
-####################SBA per TP and Group
+#################### Figure 2B: hSBA per TP and Group
 # create a new dataframe for plotting
 df = as.data.frame(men_sba) 
-df$Group <- gsub("HIV", "PHIV", df$Group)
 
 df_plot <- df %>%
   pivot_longer(cols = c(SBA_T0, SBA_T2, SBA_T3),
@@ -307,11 +303,10 @@ fc_tp_1 = ggplot(df_plot, aes(x = time, y = value, color = Group, fill = Group))
   theme_classic(base_size = 30)
 
 
-##############SBA per TP and Group TREATMENT
+############## Figure 2E : hSBA per TP and Group TREATMENT
 # create a new dataframe for plotting
 df = as.data.frame(men_sba)
 
-df <- merge(df, men_treatment, all.x = T)
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
 
@@ -379,17 +374,12 @@ fc_tp_2 = ggplot(df_plot, aes(x = time, y = value, color = `ART start`, fill = `
   scale_x_discrete(labels = c("T0", "T2", "T3")) +
   theme_classic(base_size = 30)
 
-##############################FC T0-T2
+############################## Figure 2C: FC T0-T2
 # Create plot
 df = as.data.frame(men_sba) 
-df$Group <- gsub("HIV", "PHIV", df$Group)
 
 df$SBA_FC = df$SBA_T2 / df$SBA_T0
 df$Seroprotection <- ifelse(df$SBA_T0 < 4, "NSP", "SP")
-
-mwu_test_fc <- wilcox.test(SBA_FC ~ Group, data = subset(df, Group %in% c("HC", "PHIV")), 
-                           na.rm = T,
-                           exact = F)
 
 df = df[complete.cases(df$SBA_FC), ]
 
@@ -448,9 +438,8 @@ fc_t0t2_1 = ggplot(df, aes(x = Group, y = SBA_FC, color = Group)) +
   guides(shape = guide_legend(override.aes = list(size = 6))) +
   theme_classic(base_size = 30)
 
-#############  FC T0-T2 early-late
+############# Figure 2F: FC T0-T2 early-late
 df = as.data.frame(men_sba)
-df <- merge(df, men_treatment, all.x = T)
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
 
@@ -460,10 +449,6 @@ df$Seroprotection <- ifelse(df$SBA_T0 < 4, "NSP", "SP")
 
 df <- df[!is.na(df$Treatment), ]
 df =  df[!is.na(df$SBA_FC), ]
-
-mwu_test_fc <- wilcox.test(SBA_FC ~ Treatment, data = subset(df, Treatment %in% c("Early", "Late")), 
-                           na.rm = T,
-                           exact = F)
 
 df = df[complete.cases(df$SBA_FC), ]
 
@@ -543,47 +528,15 @@ ggsave(PATH,  combined_plot_fig2a , height = 20, width = 33, dpi = 600)
 
 ############################################################################# FIGURE 3 ########################################################################################################
 
-df = men_cito_new_2
-#removal of rows with NA values in Freq
-df <- df %>% drop_na('Frequences of CD19+')
-df
-df$Group <- gsub("HIV", "PHIV", df$Group)
-
-pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
-
-df <- merge(df, pro, by= c("StudyPID"), all.x = T)
-df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
-
-# Define the variables to loop over
-variables_to_plot <- c("StudyPID", 
-                       "Lab date.x", 
-                       "Group.x",
-                       'Frequences of CD19+.x',
-                       'Frequences of CD19+ CD27-IgD+ (Naive)',
-                       'Frequences of CD19+ CD27+IgD+ (unsw.memory)',
-                       'Frequences of CD19+ CD27+IgD- (sw.memory)',
-                       'Frequences of CD19+ CD27-IgD- (double negative)',
-                       'Frecquences of CD27+ CD21- (Activated Memory)',
-                       'Frecquences of CD27- CD21- (Tissue like Memory)')
-
-df = df[, variables_to_plot]
-
-colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
-colnames(df) <- gsub("Frequences of ", "", colnames(df))
-#rimuovo errore alessia
-colnames(df)<- gsub("Frecquences of ", "", colnames(df))
-colnames(df)<- gsub("\\.x", "", colnames(df))
-colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ CD19+ CD27+IgD-IgG+ (Switched Memory)", colnames(df))
-
-colnames(df) = c("StudyPID","Lab date","Group","CD19+", "CD27-IgD+ (Naive)","CD27+IgD+ (USM)","CD27+IgD- (SM)","CD27-IgD- (DN)","CD27+CD21- (AM)", "CD27-CD21- (TLM)")
-
-# Reshape the data into a long format
-df_long <- df %>%
-  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Group))
-
-#clean value
-df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
-
+df = df_frequencies
+selection = c("CD19+", 
+      "CD27-IgD+ (Naive)",
+      "CD27+IgD+ (USM)",
+      "CD27+IgD- (SM)",
+      "CD27-IgD- (DN)",
+      "CD27+CD21- (AM)",
+      "CD27-CD21- (TLM)")
+df = df_frequencies[df_frequencies$cell_populations %in% selection,]
 # Reorder the levels of the cell_populations variable
 order = c("CD19+", 
   "CD27-IgD+ (Naive)",
@@ -673,63 +626,25 @@ merged_plot <- ggarrange(plot_cd19, plot_remaining,
 
 ######## VIOLIN TREATMENT
 
-df = men_cito_new_2
-
-#removal of rows with NA values in Freq
-df <- df %>% drop_na('Frequences of CD19+')
-
-#merge con freq old
-pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
-
-df <- merge(df, pro, by= c("StudyPID"), all.x = T)
-df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
-df <- merge(df, men_treatment, by = c("StudyPID"), all.x = T)
-
-df <- df[!is.na(df$Treatment), ]
+df = df_frequencies
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
-
-# Define the variables to loop over
-variables_to_plot <- c("StudyPID", 
-                       "Lab date.x", 
-                       #"Group.x",
-                       "Treatment",
-                       'Frequences of CD19+.x',
-                       'Frequences of CD19+ CD27-IgD+ (Naive)',
-                       'Frequences of CD19+ CD27+IgD+ (unsw.memory)',
-                       'Frequences of CD19+ CD27+IgD- (sw.memory)',
-                       'Frequences of CD19+ CD27-IgD- (double negative)',
-                       'Frecquences of CD27+ CD21- (Activated Memory)',
-                       'Frecquences of CD27- CD21- (Tissue like Memory)')
-                       
-df = df[, variables_to_plot]
-
-colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
-colnames(df) <- gsub("Frequences of ", "", colnames(df))
-
-#rimuovo errore alessia
-colnames(df)<- gsub("Frecquences of ", "", colnames(df))
-colnames(df)<- gsub("\\.x", "", colnames(df))
-colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ CD27+IgD-IgG+ (Switched Memory)", colnames(df))
-
-colnames(df) = c("StudyPID",
-                 "Lab date",
-                 "Treatment",
-                 "CD19+", 
-                 "CD27-IgD+ (Naive)",
-                 "CD27+IgD+ (USM)",
-                 "CD27+IgD- (SM)",
-                 "CD27-IgD- (DN)",
-                 "CD27+CD21- (AM)", 
-                 "CD27-CD21- (TLM)")
-
-
-# Reshape the data into a long format
-df_long <- df %>%
-  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Treatment))
-
-#clean value
-df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
+selection = c("CD19+", 
+      "CD27-IgD+ (Naive)",
+      "CD27+IgD+ (USM)",
+      "CD27+IgD- (SM)",
+      "CD27-IgD- (DN)",
+      "CD27+CD21- (AM)",
+      "CD27-CD21- (TLM)")
+df = df_frequencies[df_frequencies$cell_populations %in% selection,]
+# Reorder the levels of the cell_populations variable
+order = c("CD19+", 
+  "CD27-IgD+ (Naive)",
+  "CD27+IgD+ (USM)",
+  "CD27+IgD- (SM)",
+  "CD27-IgD- (DN)",
+  "CD27+CD21- (AM)",
+  "CD27-CD21- (TLM)")
 
 # Reorder the levels of the cell_populations variable
 order = c("CD19+", 
@@ -824,45 +739,18 @@ ggsave(PATH, combined_vio, height = 16, width = 16, dpi = 600)
 orig_locale <- Sys.getlocale("LC_NUMERIC")
 Sys.setlocale("LC_NUMERIC", "C")
 
-df = men_cito_new
-df$Group <- gsub("HIV", "PHIV", df$Group)
+df = df_frequencies
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
 
-#removal of rows with NA values in Freq
-df <- df %>% drop_na('Frequences of CD19+')
+df$cell_populations<- gsub("fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)", "fHbp+ SM", df$cell_populations, ignore.case = TRUE)
+df$cell_populations <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", df$cell_populations, ignore.case = TRUE)
+df$cell_populations <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", df$cell_populations, ignore.case = TRUE)
 
-#merge con freq old
-pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
-
-df <- merge(df, pro, by= c("StudyPID"), all.x = T)
-df <- merge(df, men_sba, by = c("StudyPID"), all.x = T)
-
-# Define the variables to loop over
-variables_to_plot <- c("StudyPID", 
-                       "Lab date.x", 
-                       "Group.x",
-                       'Frecquences of Ag specifiche on CD27+ CD21- (Activated Memory)',
-                       'Frecquences of Ag specifiche on CD27- CD21- (Tissue like Memory)',
-                       'Frequences of sw.memory IgG+fHbp+ (Ag spec)'
-                       )
-
-df = df[, variables_to_plot]
-
-colnames(df) <- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df))
-colnames(df) <- gsub("Frequences of ", "", colnames(df))
-#rimuovo errore alessia
-colnames(df)<- gsub("Frecquences of ", "", colnames(df))
-colnames(df)<- gsub("\\.x", "", colnames(df))
-colnames(df)<- gsub("sw.memory IgG\\+fHbp\\+ \\(Ag spec\\)", "fHbp+ SM", colnames(df))
-colnames(df) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df), ignore.case = TRUE)
-colnames(df) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df), ignore.case = TRUE)
-
-
-# Reshape the data into a long format
-df_long <- df %>%
-  gather(key = "cell_populations", value = "frequencies", -c(StudyPID, "Lab date", Group))
-
-#clean value
-df_long$frequencies = as.numeric(gsub(",", ".", df_long$frequencies))
+selection = c("fHbp+ SM", 
+      "fHbp+ AM",
+      "fHbp+ TLM")
+df = df_frequencies[df_frequencies$cell_populations %in% selection,]
 
 # Reorder the levels of the cell_populations variable
 order = c("fHbp+ SM",
@@ -897,12 +785,13 @@ el_plot_1 = ggplot(df_long, aes(x = cell_populations, y = frequencies, fill = Gr
 ggsave(PATH, el_plot_1, height = 6, width = 18, dpi = 600)
 
 ############################################################################# FIGURE 4C & 4D ########################################################################################################
-
-df = as.data.frame(men_sba) 
-df <- merge(df, men_cito_new, all.x = T)
-df <- merge(df, men_cito_new_2, all.x = T)
-df <- merge(df, men_treatment, all.x = T)
-df <- merge(df, men_clin, all.x = T)
+ 
+df_wide <- df_frequencies %>%
+  pivot_wider(
+    id_cols = c(StudyPID, Group, Gender, Treatment),
+    names_from = cell_populations,
+    values_from = frequencies
+  )
 
 # Pivot the dataframe to the wide format
 igg_wide <- pivot_wider(men_igg, 
@@ -915,12 +804,7 @@ igg_wide <- pivot_wider(men_igg,
 # Rename the columns to match the desired format
 colnames(igg_wide) <- c("StudyPID", "fHbp_T0", "NadA_T0", "NHBA_T0", "fHbp_T2", "NadA_T2", "NHBA_T2")
 
-df <- merge(df, igg_wide, all.x = T)
-
-#merge con freq old
-pro = as.data.frame(men_cito_ale) %>% drop_na('Frequences of CD19+')
-
-df <- merge(df, pro, by= c("StudyPID"), all.x = T)
+df <- merge(df_wide, igg_wide, by= c("StudyPID"), all.x = T)
 
 df$SBA_res = ifelse(df$SBA_T2 >= 4*df$SBA_T0, "R", "UR")
 Grp_levels <- levels(factor(df$Group.x))
@@ -942,9 +826,9 @@ variables_to_plot <- c('fHbp_T2',
                        'NHBA_FC',
                        'SBA_T2',
                        'SBA_FC',
-                       'Frequences of sw.memory IgG+fHbp+ (Ag spec)',
-                       'Frecquences of Ag specifiche on CD27+ CD21- (Activated Memory)',
-                       'Frecquences of Ag specifiche on CD27- CD21- (Tissue like Memory)')
+                       'fHbp+ CD27+IgD-IgG+ (Switched Memory)',
+                       'fHbp+ CD27+IgD-IgG+ (Switched Memory)',
+                       'fHbp+ CD27- CD21- (Tissue like Memory)')
                        )
 
 ####HC
@@ -956,15 +840,9 @@ for (i in colnames(df_hc)[9:length(colnames(df_hc))]) {
 
 df_hc[, variables_to_plot] <- lapply(df_hc[, variables_to_plot], as.numeric)
 
-colnames(df_hc) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_hc))
-#rimuovo errore alessia
-colnames(df_hc)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_hc))
-colnames(df_hc)<- gsub("Frecquences", "Frequency", colnames(df_hc))
-colnames(df_hc)<- gsub("Ag ", "fHbp+ ", colnames(df_hc))
-colnames(df_hc)<- gsub("\\.x", "", colnames(df_hc))
-colnames(df_hc) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hc))
-colnames(df_hc) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hc))
-colnames(df_hc) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_hc))
+colnames(df_hc) <- gsub("fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)", "fHbp+ SM", colnames(df_hc), ignore.case = TRUE)
+colnames(df_hc) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hc), ignore.case = TRUE)
+colnames(df_hc) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hc), ignore.case = TRUE)
 colnames(df_hc) <- gsub("SBA", "hSBA", colnames(df_hc))
 
 
@@ -982,15 +860,9 @@ for (i in colnames(df_hiv)[9:length(colnames(df_hiv))]) {
 
 df_hiv[, variables_to_plot] <- lapply(df_hiv[, variables_to_plot], as.numeric)
 
-colnames(df_hiv) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_hiv))
-#rimuovo errore alessia
-colnames(df_hiv)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_hiv))
-colnames(df_hiv)<- gsub("Frecquences", "Frequency", colnames(df_hiv))
-colnames(df_hiv)<- gsub("Ag ", "fHbp+ ", colnames(df_hiv))
-colnames(df_hiv)<- gsub("\\.x", "", colnames(df_hiv))
-colnames(df_hiv) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hiv))
-colnames(df_hiv) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hiv))
-colnames(df_hiv) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_hiv))
+colnames(df_hiv) <- gsub("fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)", "fHbp+ SM", colnames(df_hiv), ignore.case = TRUE)
+colnames(df_hiv) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_hiv), ignore.case = TRUE)
+colnames(df_hiv) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_hiv), ignore.case = TRUE)
 colnames(df_hiv) <- gsub("SBA", "hSBA", colnames(df_hiv))
 
 
@@ -1008,15 +880,9 @@ for (i in colnames(df_early)[9:length(colnames(df_early))]) {
 
 df_early[, variables_to_plot] <- lapply(df_early[, variables_to_plot], as.numeric)
 
-colnames(df_early) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_early))
-#rimuovo errore alessia
-colnames(df_early)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_early))
-colnames(df_early)<- gsub("Frecquences", "Frequency", colnames(df_early))
-colnames(df_early)<- gsub("Ag ", "fHbp+ ", colnames(df_early))
-colnames(df_early)<- gsub("\\.x", "", colnames(df_early))
-colnames(df_early) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_early))
-colnames(df_early) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_early))
-colnames(df_early) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_early))
+colnames(df_early) <- gsub("fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)", "fHbp+ SM", colnames(df_early), ignore.case = TRUE)
+colnames(df_early) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_early), ignore.case = TRUE)
+colnames(df_early) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_early), ignore.case = TRUE)
 colnames(df_early) <- gsub("SBA", "hSBA", colnames(df_early))
 
 
@@ -1034,15 +900,9 @@ for (i in colnames(df_late)[9:length(colnames(df_late))]) {
 
 df_late[, variables_to_plot] <- lapply(df_late[, variables_to_plot], as.numeric)
 
-colnames(df_late) <- gsub("Frequences of Ag specifiche on ", "fHbp+ ", colnames(df_late))
-#rimuovo errore alessia
-colnames(df_late)<- gsub("Frecquences of Ag specifiche on ", "fHbp+ ", colnames(df_late))
-colnames(df_late)<- gsub("Frecquences", "Frequency", colnames(df_late))
-colnames(df_late)<- gsub("Ag ", "fHbp+ ", colnames(df_late))
-colnames(df_late)<- gsub("\\.x", "", colnames(df_late))
-colnames(df_late) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_late))
-colnames(df_late) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_late))
-colnames(df_late) <- gsub("Frequences of sw\\.memory IgG\\+fHbp\\+ \\(fHbp\\+ spec\\)", "fHbp+ SM", colnames(df_late))
+colnames(df_late) <- gsub("fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)", "fHbp+ SM", colnames(df_late), ignore.case = TRUE)
+colnames(df_late) <- gsub("fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)", "fHbp+ AM", colnames(df_late), ignore.case = TRUE)
+colnames(df_late) <- gsub("fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)", "fHbp+ TLM", colnames(df_late), ignore.case = TRUE)
 colnames(df_late) <- gsub("SBA", "hSBA", colnames(df_late))
 
 # Compute correlation matrix only HIV
