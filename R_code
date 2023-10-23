@@ -71,7 +71,8 @@ test_group_difference <- function(df, group_col, selected_col) {
 
 ##############  
 
-ADD INPUT DATA
+men_sba = read.csv("MenB_hSBA_data.csv")
+df_frequencies = read.csv("MenB_frequency_data.csv")
 
 ############################################################################# FIGURE 2 ########################################################################################################
 
@@ -914,7 +915,7 @@ p_values_late = cor.mtest(df_late, use = "pairwise.complete.obs")$p
 ######### HIV vs HC
 
 # List of variable names to process
-variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2")
+variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2", "hSBA_FC")
 process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
   cat("Processing variable:", variable_name, "\n")
   
@@ -928,22 +929,10 @@ process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, 
   pval_data1$variables <- rownames(pval_data1)
   pval_data2$variables <- rownames(pval_data2)
   
-  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                            idvar = "Group", 
-                            timevar = "variables", 
-                            direction = "wide")
-  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                            idvar = "Group", 
-                            timevar = "variables", 
-                            direction = "wide")
-  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                             idvar = "Group", 
-                             timevar = "variables", 
-                             direction = "wide")
-  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                             idvar = "Group", 
-                             timevar = "variables", 
-                             direction = "wide")
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
   
   combined_data <- rbind(cor_data1_wide, cor_data2_wide)
   combined_data$Ag <- gsub("_T2", "", variable_name)
@@ -988,6 +977,7 @@ combined_pval[, 2:(dim(combined_pval)[2] - 1)] <- lapply(
   function(x) as.numeric(as.character(x))
 )
 
+grp = combined_pval$Group
 
 # Recode p-values into different categories
 combined_pval[combined_pval <= 0.001] <- "***"
@@ -999,43 +989,36 @@ combined_pval[combined_pval > 0.055] <- " "
 colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
 colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
 
-colnames(combined_data)<- gsub("Frequences of ", "", colnames(combined_data))
-colnames(combined_data)<- gsub("Frequency of ", "", colnames(combined_data))
-colnames(combined_data)<- gsub("Frequences of sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_data))
+combined_pval$Group = grp
 
-colnames(combined_pval)<- gsub("Frequences of ", "", colnames(combined_pval))
-colnames(combined_pval)<- gsub("Frequency of ", "", colnames(combined_pval))
-colnames(combined_pval)<- gsub("sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_pval))
+#Versione Solo Frequenze
+combined_data = combined_data[combined_data$Group == "PHIV", c(1, (ncol(combined_data) - 3):ncol(combined_data))]
+combined_pval = combined_pval[combined_pval$Group == "PHIV", c(1, (ncol(combined_pval) - 3):ncol(combined_pval))]
 
 # Apply the same color scheme for annotations as before
-annot <- data.frame(Ag = combined_data$Ag, Group = combined_data$Group, row.names = rownames(combined_data))
-
-colnames(annot)[2] <- "Group    "
-
-annoCol <- list(Ag = c(fHbp = "yellow", NHBA = "turquoise", NadA = "#CC99FF", hSBA = "#99FF99"), 
-                "Group    " = c(HC = "blue", PHIV = "red"))
+annot <- data.frame(Group = combined_data$Group, row.names = rownames(combined_data))
+colnames(annot)[1] <- "Group    "
+annoCol <- list("Group    " = c(HC = "blue", PHIV = "red"))#Correlates = c(fHbp = "yellow", NHBA = "turquoise", NadA = "#CC99FF", hSBA = "lightgreen", hSBA_FC = "darkgreen"), 
 
 
 # Create the pheatmap plot
-cor_hm_hivhc = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
+cor_hm = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
                   annotation_col = annot, 
                   annotation_colors = annoCol,
                   cellheight = 25,
+                  cluster_cols = FALSE,
                   cluster_rows = FALSE, 
                   scale = "none",
                   show_colnames = F,
                   fontsize = 12,
                   fontsize_number = 25, 
+                  #main = "Correlation Between Variables",
                   display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]))
-png("Figure_4C.png", units = "in", width = 10, height = 6, res = 600)
-
-cor_hm_hivhc
-dev.off()
 
 ############# Early vs Late
 
 # List of variable names to process
-variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2")
+variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2", "hSBA_FC")
 process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
   cat("Processing variable:", variable_name, "\n")
   
@@ -1049,22 +1032,10 @@ process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, 
   pval_data1$variables <- rownames(pval_data1)
   pval_data2$variables <- rownames(pval_data2)
   
-  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                            idvar = "Group", 
-                            timevar = "variables", 
-                            direction = "wide")
-  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                            idvar = "Group", 
-                            timevar = "variables", 
-                            direction = "wide")
-  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                             idvar = "Group", 
-                             timevar = "variables", 
-                             direction = "wide")
-  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], 
-                             idvar = "Group", 
-                             timevar = "variables", 
-                             direction = "wide")
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
   
   combined_data <- rbind(cor_data1_wide, cor_data2_wide)
   combined_data$Ag <- gsub("_T2", "", variable_name)
@@ -1084,7 +1055,7 @@ processed_data_list <- lapply(variable_names, function(var) {
   cor_data2 <- data.frame(cor_late_mat)
   pval_data1 <- data.frame(p_values_early)
   pval_data2 <- data.frame(p_values_late)
-
+  
   process_variable_data(cor_data1, cor_data2, pval_data1, pval_data2, var)
 })
 
@@ -1121,40 +1092,34 @@ combined_pval[combined_pval > 0.055] <- " "
 colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
 colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
 
-colnames(combined_data)<- gsub("Frequences of ", "", colnames(combined_data))
-colnames(combined_data)<- gsub("Frequency of ", "", colnames(combined_data))
-colnames(combined_data)<- gsub("Frequences of sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_data))
+combined_data = combined_data[, c(1, (ncol(combined_data) - 3):ncol(combined_data))]
+combined_pval = combined_pval[, c(1, (ncol(combined_pval) - 3):ncol(combined_pval))]
 
-colnames(combined_pval)<- gsub("Frequences of ", "", colnames(combined_pval))
-colnames(combined_pval)<- gsub("Frequency of ", "", colnames(combined_pval))
-colnames(combined_pval)<- gsub("sw.memory IgG+fHbp+ (fHbp+ spec)", "fHbp+ sw.memory IgG+ (Ag spec)", colnames(combined_pval))
 
-# Apply the same color scheme for annotations as before
-annot <- data.frame(Ag = combined_data$Ag, Treatment = combined_data$Group, row.names = rownames(combined_data))
+annot <- data.frame(Treatment = combined_data$Group, row.names = rownames(combined_data))
 
-colnames(annot)[2] <- "ART start"
+colnames(annot)[1] <- "ART start"
 
-annoCol <- list(Ag = c(fHbp = "yellow", NHBA = "turquoise", NadA = "#CC99FF", hSBA = "#99FF99"), 
-                "ART start" = c(Early = "darkcyan", Late = "darkorange"))
-
+annoCol <- list("ART start" = c(Early = "darkcyan", Late = "darkorange"))
 
 # Create the pheatmap plot
-cor_hm_el = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
-         annotation_col = annot, 
-         annotation_colors = annoCol,
-         cellheight = 25,
-         cluster_rows = FALSE, 
-         scale = "none",
-         show_colnames = F,
-         fontsize = 12,
-         fontsize_number = 25, 
-         display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]),
-         margin = c(10,10))
+cor_el = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
+                  annotation_col = annot, 
+                  annotation_colors = annoCol,
+                  #cellwidth = .5, 
+                  cellheight = 25,
+                  cluster_cols = FALSE,
+                  cluster_rows = FALSE, 
+                  scale = "none",
+                  show_colnames = F,
+                  fontsize = 12,
+                  fontsize_number = 25, 
+                  #main = "Correlation Between Variables",
+                  display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]),
+                  margin = c(10,10))
 
-png("Figure_4D.png", units = "in", width = 10, height = 6, res = 600)
-
-cor_hm_el
-dev.off()
+comb_hm = grid.arrange(cor_hm[[4]], cor_el[[4]], ncol = 3, widths = c(0.2, 1, 0.2), layout_matrix = rbind(c(NA,1,NA), c(NA, 2, NA)))
+ggsave("Figure4_CD.png", comb_hm, height = 6, width = 12, dpi = 600)
 
 ############################################################################# FIGURE 5 ########################################################################################################
 
@@ -1195,7 +1160,6 @@ design <- model.matrix(~ 0 + gruppi + pids,
                        data = as.data.frame(base))
 
 contrasts_men <- makeContrasts(
-  #HIV vs HC
   HIV_CD19_RvsHIV_CD19_UR = gruppiHIV_CD19_R-gruppiHIV_CD19_UR,
   HC_CD19_RvsHC_CD19_UR = gruppiHC_CD19_R-gruppiHC_CD19_UR,
   HIV_CD19_RvsHC_CD19_R = gruppiHIV_CD19_R-gruppiHC_CD19_R,
