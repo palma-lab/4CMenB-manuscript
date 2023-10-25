@@ -545,7 +545,7 @@ combined_plot_fig2a <- grid.arrange(
   widths = c(1, 1, 1, 0.1),
   layout_matrix = rbind(c(1, 2, 3, 3),
                         c(4, 5, 6, 6)))
-ggsave(PATH,  combined_plot_fig2a , height = 20, width = 33, dpi = 600)
+ggsave("Figure_2.png",  combined_plot_fig2a , height = 20, width = 33, dpi = 600)
 
 ############################################################################# FIGURE 3 ########################################################################################################
 ############################################################     Figure 3A
@@ -755,7 +755,7 @@ merged_plot_2 <- ggarrange(plot_cd19_2, plot_remaining_2,
                          legend = "right")
 
 combined_vio = grid.arrange(merged_plot, merged_plot_2, ncol = 1) #v2
-ggsave(PATH, combined_vio, height = 16, width = 16, dpi = 600)
+ggsave("Figure_3.png", combined_vio, height = 16, width = 16, dpi = 600)
 
 ############################################################################# FIGURE 4B ########################################################################################################
 
@@ -805,7 +805,7 @@ el_plot_1 = ggplot(df_long, aes(x = cell_populations, y = frequencies, fill = Gr
   facet_wrap(~ cell_populations, scales = "free", ncol = 3) +
   theme(strip.text = element_text(size = 25))
 
-ggsave(PATH, el_plot_1, height = 6, width = 18, dpi = 600)
+ggsave("Figure_4B.png", el_plot_1, height = 6, width = 18, dpi = 600)
 
 ############################################################################# FIGURE 4C & 4D ########################################################################################################
  
@@ -1139,7 +1139,7 @@ cor_el = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]),
                   margin = c(10,10))
 
 comb_hm = grid.arrange(cor_hm[[4]], cor_el[[4]], ncol = 3, widths = c(0.2, 1, 0.2), layout_matrix = rbind(c(NA,1,NA), c(NA, 2, NA)))
-ggsave("Figure4_CD.png", comb_hm, height = 6, width = 12, dpi = 600)
+ggsave("Figure_4_CD.png", comb_hm, height = 6, width = 12, dpi = 600)
 
 ############################################################################# FIGURE 5 ########################################################################################################
 ############################################################   FIGURE 5 A-B-C
@@ -1423,5 +1423,5 @@ go_plots <- go_hc_no_legend + plot_spacer() + go_hiv_no_legend +
   plot_layout(guides = 'collect', widths = c(1, 0.1, 1)) 
 
 #versione orizzontale
-ggsave("Figure_5_DE.png", go_plots, height = 15, width = 43, dpi = 600)
+ggsave("Figure_5_bot.png", go_plots, height = 15, width = 43, dpi = 600)
 
