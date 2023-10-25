@@ -30,6 +30,8 @@ library(enrichplot)
 library(doBy)
 
 ################################################################################# Functions
+nth_element <- function(vector, starting_position, n) { 
+  vector[seq(starting_position, length(vector), n)] }
 
 test_group_difference <- function(df, group_col, selected_col) {
   # Load necessary packages
@@ -69,14 +71,27 @@ test_group_difference <- function(df, group_col, selected_col) {
   return(wilcox_test)
 }
 
-##############  
+##########################################################################  LOAD INPUT DATA  ###############################################################################################
 
 men_sba = read.csv("MenB_hSBA_data.csv")
 df_frequencies = read.csv("MenB_frequency_data.csv")
+inp_men = read.delim("Combined_Chip_Run_MeN.csv", 
+                     skip = 11, 
+                     sep = ",", 
+                     colClasses= "character")
+
+men_meta = read.csv("MenB_Fluidigm_meta.csv", row.names = 1)
+
+#LOAD FLUIDIGM Ct DATA
+men_ct = readCtData(files = "C:/Users/snnma/Downloads/Combined_Chip_Run_MeN.csv", 
+                    n.features = 96,
+                    n.data = length(samplenames_men),
+                    samples = samplenames_men,
+                    format = "BioMark")
 
 ############################################################################# FIGURE 2 ########################################################################################################
 
-######## Figure 2A: COMBINED HC-HIV hSBA CUTOFFS CURVES
+############################################################     Figure 2A: COMBINED HC-HIV hSBA CUTOFFS CURVES
 df = as.data.frame(men_sba)
 
 df = df %>% 
@@ -156,7 +171,7 @@ plot_1 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = Group)) +
   theme_classic(base_size = 30) + 
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
-######## Figure 2D: COMBINED HIV
+############################################################       Figure 2D: COMBINED HIV
 df = as.data.frame(men_sba)
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
@@ -243,7 +258,7 @@ plot_2 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = `ART start`, li
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
 
 
-#################### Figure 2B: hSBA per TP and Group
+############################################################          Figure 2B: hSBA per TP and Group
 # create a new dataframe for plotting
 df = as.data.frame(men_sba) 
 
@@ -306,7 +321,8 @@ fc_tp_1 = ggplot(df_plot, aes(x = time, y = value, color = Group, fill = Group))
   theme_classic(base_size = 30)
 
 
-############## Figure 2E : hSBA per TP and Group TREATMENT
+############################################################       Figure 2E : hSBA per TP and Group TREATMENT
+
 # create a new dataframe for plotting
 df = as.data.frame(men_sba)
 
@@ -377,7 +393,8 @@ fc_tp_2 = ggplot(df_plot, aes(x = time, y = value, color = `ART start`, fill = `
   scale_x_discrete(labels = c("T0", "T2", "T3")) +
   theme_classic(base_size = 30)
 
-############################## Figure 2C: FC T0-T2
+############################################################          Figure 2C: FC T0-T2
+
 # Create plot
 df = as.data.frame(men_sba) 
 
@@ -441,7 +458,8 @@ fc_t0t2_1 = ggplot(df, aes(x = Group, y = SBA_FC, color = Group)) +
   guides(shape = guide_legend(override.aes = list(size = 6))) +
   theme_classic(base_size = 30)
 
-############# Figure 2F: FC T0-T2 early-late
+############################################################            Figure 2F: FC T0-T2 early-late
+
 df = as.data.frame(men_sba)
 df$Treatment[df$Treatment == "early treated"] = "Early"
 df$Treatment[df$Treatment == "late treated"] = "Late"
@@ -530,6 +548,7 @@ combined_plot_fig2a <- grid.arrange(
 ggsave(PATH,  combined_plot_fig2a , height = 20, width = 33, dpi = 600)
 
 ############################################################################# FIGURE 3 ########################################################################################################
+############################################################     Figure 3A
 
 df = df_frequencies
 selection = c("CD19+", 
@@ -627,7 +646,7 @@ merged_plot <- ggarrange(plot_cd19, plot_remaining,
                          common.legend = TRUE, 
                          legend = "right")
 
-######## VIOLIN TREATMENT
+############################################################    FIGURE 3 B
 
 df = df_frequencies
 df$Treatment[df$Treatment == "early treated"] = "Early"
@@ -739,6 +758,7 @@ combined_vio = grid.arrange(merged_plot, merged_plot_2, ncol = 1) #v2
 ggsave(PATH, combined_vio, height = 16, width = 16, dpi = 600)
 
 ############################################################################# FIGURE 4B ########################################################################################################
+
 orig_locale <- Sys.getlocale("LC_NUMERIC")
 Sys.setlocale("LC_NUMERIC", "C")
 
@@ -912,7 +932,7 @@ colnames(df_late) <- gsub("SBA", "hSBA", colnames(df_late))
 cor_late_mat <- cor(df_late, use = "pairwise.complete.obs")
 p_values_late = cor.mtest(df_late, use = "pairwise.complete.obs")$p
 
-######### HIV vs HC
+############################################################ HIV vs HC : FIGURE 4 C
 
 # List of variable names to process
 variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2", "hSBA_FC")
@@ -1015,7 +1035,7 @@ cor_hm = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]),
                   #main = "Correlation Between Variables",
                   display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]))
 
-############# Early vs Late
+############################################################ Early vs Late : FIGURE 4D
 
 # List of variable names to process
 variable_names <- c("fHbp_T2", "NHBA_T2", "NadA_T2", "hSBA_T2", "hSBA_FC")
@@ -1122,118 +1142,171 @@ comb_hm = grid.arrange(cor_hm[[4]], cor_el[[4]], ncol = 3, widths = c(0.2, 1, 0.
 ggsave("Figure4_CD.png", comb_hm, height = 6, width = 12, dpi = 600)
 
 ############################################################################# FIGURE 5 ########################################################################################################
+############################################################   FIGURE 5 A-B-C
+
+#sample names
+samplenames_men = nth_element(inp_men$Name, 1, 96)
+
+#METADATA CLEANING
+samplenames_men <- gsub("MenB", "MenB_0", samplenames_men)
+samplenames_men <- gsub("MenC", "MenC_", samplenames_men)
+samplenames_men <- gsub("HHIV_040_Ag", "HIV_H040_Ag", samplenames_men)
+samplenames_men <- gsub("HIV_011_CD19", "HIV_H011_CD19", samplenames_men)
+
+pData(men_ct) = men_meta
+
+#############     set categories
+men_cat = setCategory(men_ct, groups = NULL, Ct.min = 13, Ct.max = 40 - 0.0001,flag = TRUE, flag.out = "Flag")
+
+#############     FLUIDIGM: filter undetermined categories
+filter_und = filterCategory(men_cat, na.categories = c("Undetermined"))
+
+filt_samplenames = colnames(filter_und)
+expr_matr = exprs(filter_und)
+colnames(expr_matr) = filt_samplenames
+
+# Calculate the proportion of non-NA values in each row
+prop_non_na <- rowSums(!is.na(expr_matr)) / ncol(expr_matr)
+
+#Filter genes with less than 30% non-NA values 
+df_subset <- expr_matr[round(prop_non_na, 1) >= 0.3,]
+
+#Compute % of NA in each column (samples)
+non_na_prop <- colMeans(!is.na(df_subset))
+
+#Filter samples with less than 60% non-NA values
+M_subset <- df_subset[, round(non_na_prop, 1) >= 0.6]
+
+# remove bad samples manually
+mat_clean <- M_subset[, -grep("Ale", colnames(M_subset))]
+mat_clean = mat_clean[, -grep("HC_MenB_013_CD19", colnames(mat_clean))]
+
+#### FLUIDIGM DATA PREPROCESSING:
+
+# Set NA values to 40
+mat_clean[is.na(mat_clean)] <- 40
+
+# Create vector of weights for cyclicloess normalization
+weigt_men = c(rownames(mat_clean))
+
+# Set all genes to same weight
+weight_men[weight_men != 50] = 1
+weight_men = as.numeric(weight_men)
+
+# Convert Ct values in Et (expression tresholds: 40 - ct)
+et_men = apply(mat_clean,c(1,2), function(x) 40 - x)
+
+# Assign new values
+mat_clean = et_men
+
+#### set Et values < 13 to 13
+mu = et_men
+mu[mu < 13] = 13
+mat_clean = mu
+
+# NORMALIZATION
+bwta_men = normalizeBetweenArrays(mat_clean, method="cyclicloess", weights = weigt_men)
+
+raw_m <- new("qPCRset", exprs = bwta_men, featureCategory =
+               featureCategory(men_cat)[rownames(mat_clean), colnames(mat_clean)])
+
+featureNames(raw_m) <- rownames(mat_clean)
+pData(raw_m) = pData(men_cat)[colnames(mat_clean),]
+
+##### LIMMA DEGs
 
 base = exprs(raw_m)
 colnames(base) = rownames(pData(raw_m))
-samples <- pData(raw_m)[, c(1,3,4,5, 22)]
-samples = na.omit(samples)
-samples
-samples$pairs = str_c(samples$Grp, "_", samples$Cond)
 
+#### KEEP REQUIRED METADATA
+samples <- pData(raw_m)[, c(1,3,4,5, 12)]
+samples = na.omit(samples)
+
+samples$pairs = str_c(samples$Grp, "_", samples$Cond)
 samples$full = str_c(samples$pairs, "_", samples$SBA_res)
 
-#I pid non servono perchè li metto nel duplicate corr con block
 pids = samples$StudyPID
-
-gruppi = samples$pairs
 gruppi = samples$full
-
 response= samples$SBA_res
-#ages = samples$Age_T2
 gender = samples$Gender
-gruppi
+
 # Define the factor levels for each variable
 levels(pids) <- levels(factor(pids))
 levels(gruppi)<- levels(factor(gruppi))
-#levels(subpop) <- levels(factor(subpop))
 levels(response) <- levels(factor(response))
 levels(gender) = levels(factor(gender))
-samples
+
 
 for (levels in levels(gruppi)) {
   print(levels)
   print(length(grep(levels, gruppi, value = FALSE)))
 }
 
-###R vs UR in HIV
+### design matrix for LIMMA
 design <- model.matrix(~ 0 + gruppi + pids, 
                        data = as.data.frame(base))
 
+####contrast matrix
 contrasts_men <- makeContrasts(
-  HIV_CD19_RvsHIV_CD19_UR = gruppiHIV_CD19_R-gruppiHIV_CD19_UR,
+  #PHIV vs HC
+  PHIV_CD19_RvsPHIV_CD19_UR = gruppiPHIV_CD19_R-gruppiPHIV_CD19_UR,
   HC_CD19_RvsHC_CD19_UR = gruppiHC_CD19_R-gruppiHC_CD19_UR,
-  HIV_CD19_RvsHC_CD19_R = gruppiHIV_CD19_R-gruppiHC_CD19_R,
-  HIV_CD19_URvsHC_CD19_UR = gruppiHIV_CD19_UR-gruppiHC_CD19_UR,
-  HIV_Naive_RvsHIV_Naive_UR = gruppiHIV_Naive_R-gruppiHIV_Naive_UR,
+  PHIV_CD19_RvsHC_CD19_R = gruppiPHIV_CD19_R-gruppiHC_CD19_R,
+  PHIV_CD19_URvsHC_CD19_UR = gruppiPHIV_CD19_UR-gruppiHC_CD19_UR,
+  PHIV_Naive_RvsPHIV_Naive_UR = gruppiPHIV_Naive_R-gruppiPHIV_Naive_UR,
   HC_Naive_RvsHC_Naive_UR = gruppiHC_Naive_R-gruppiHC_Naive_UR,
-  HIV_Naive_RvsHC_Naive_R = gruppiHIV_Naive_R-gruppiHC_Naive_R,
-  HIV_Naive_URvsHC_Naive_UR = gruppiHIV_Naive_UR-gruppiHC_Naive_UR,
-  HIV_NotAg_RvsHIV_NotAg_UR = gruppiHIV_NotAg_R-gruppiHIV_NotAg_UR,
+  PHIV_Naive_RvsHC_Naive_R = gruppiPHIV_Naive_R-gruppiHC_Naive_R,
+  PHIV_Naive_URvsHC_Naive_UR = gruppiPHIV_Naive_UR-gruppiHC_Naive_UR,
+  PHIV_NotAg_RvsPHIV_NotAg_UR = gruppiPHIV_NotAg_R-gruppiPHIV_NotAg_UR,
   HC_NotAg_RvsHC_NotAg_UR = gruppiHC_NotAg_R-gruppiHC_NotAg_UR,
-  HIV_NotAg_RvsHC_NotAg_R = gruppiHIV_NotAg_R-gruppiHC_NotAg_R,
-  HIV_NotAg_URvsHC_NotAg_UR = gruppiHIV_NotAg_UR-gruppiHC_NotAg_UR,
-  HIV_Ag_RvsHIV_Ag_UR = gruppiHIV_Ag_R-gruppiHIV_Ag_UR,
+  PHIV_NotAg_RvsHC_NotAg_R = gruppiPHIV_NotAg_R-gruppiHC_NotAg_R,
+  PHIV_NotAg_URvsHC_NotAg_UR = gruppiPHIV_NotAg_UR-gruppiHC_NotAg_UR,
+  PHIV_Ag_RvsPHIV_Ag_UR = gruppiPHIV_Ag_R-gruppiPHIV_Ag_UR,
   HC_Ag_RvsHC_Ag_UR = gruppiHC_Ag_R-gruppiHC_Ag_UR,
-  HIV_Ag_RvsHC_Ag_R = gruppiHIV_Ag_R-gruppiHC_Ag_R,
-  HIV_Ag_URvsHC_Ag_UR = gruppiHIV_Ag_UR-gruppiHC_Ag_UR,
+  PHIV_Ag_RvsHC_Ag_R = gruppiPHIV_Ag_R-gruppiHC_Ag_R,
+  PHIV_Ag_URvsHC_Ag_UR = gruppiPHIV_Ag_UR-gruppiHC_Ag_UR,
   levels = colnames(design))
 
 fit <- lmFit(select(as.data.frame(base), c(rownames(samples))),
              design)
 fit2 <- contrasts.fit(fit, contrasts_men)
 fit2 <- eBayes(fit2,robust = TRUE, trend = TRUE)
+
 # Prepare output
 out <- list()
-
-if (!missing(contrasts_men)) {
-  coefs <- colnames(contrasts_men)
-  cont <- design %*% contrasts_men
-} else {
-  coefs <- colnames(design)
-  cont <- design
-}
-
 
 # Brief summary across all contrasts/tests
 res <- decideTests(fit2)
 res
 rownames(res) <- rownames(topTable(fit2, sort="none", n=nrow(fit2)))
 out[["Summary"]] <- res
-out
 colnames(out$Summary[, colSums(out$Summary != 0) > 0])
 
 volcano_list <- list()
 diff_genes = list ()
-#topTable(fit2, number = 30, adjust = "BH")      
 for (coef in colnames(out$Summary)) {
   print(coef)
   if (coef == "HC_Ag_RvsHC_Ag_UR"){
     titlenam = "fHbp+ Sw.Memory DEGs profile in HC SC vs NSC"
     ydx = 4
     
-  } else if (coef == "HIV_Ag_RvsHIV_Ag_UR") {
-    titlenam = "fHbp+ Sw.Memory DEGs profile in HIV SC vs NSC"
+  } else if (coef == "PHIV_Ag_RvsPHIV_Ag_UR") {
+    titlenam = "fHbp+ Sw.Memory DEGs profile in PHIV SC vs NSC"
     ydx = 3.5
     }
   else {
-    titlenam = "fHbp+ Sw.Memory DEGs profile in HIV NSC vs HC NSC"
+    titlenam = "fHbp+ Sw.Memory DEGs profile in PHIV NSC vs HC NSC"
     ydx = 4.5
   }
   # Extract a table of differentially expressed genes
   tab <- topTable(fit2, coef=coef, number=Inf, adjust = "BH")
-  print(tab)
-  # Adjust p-values for multiple testing
-  #tab$p.value <- p.adjust(tab$p.value, method="BH")
   
   # Extract differentially expressed genes
   de_genes <- tab %>%
-    filter(adj.P.Val < 0.054) #%>%
-    #filter(abs(logFC) > 1.5)
+    filter(adj.P.Val < 0.054)
   
   # Extract differentially expressed genes
   diff_genes[[coef]] <- de_genes
-  # Print the differentially expressed genes
-  print(de_genes)
   keyvals.colour <- ifelse(
     tab$logFC <= -1.5 & tab$adj.P.Val <= 0.054, 'orchid4',
     ifelse(tab$logFC >= 1.5 & tab$adj.P.Val <= 0.054, 'yellowgreen',
@@ -1242,7 +1315,6 @@ for (coef in colnames(out$Summary)) {
                   keyvals.colour[is.na(keyvals.colour)] <- 'gray67'
                     names(keyvals.colour)[keyvals.colour == 'yellowgreen'] <- 'Upregulated'
                     names(keyvals.colour)[keyvals.colour == 'gray67'] <- 'NS'
-                    #names(keyvals.colour)[keyvals.colour == 'gray42'] <- 'P-unadj'
                     names(keyvals.colour)[keyvals.colour == 'orchid4'] <- 'Downregulated'
                     
                     volcano_plot = EnhancedVolcano(tab,
@@ -1250,10 +1322,9 @@ for (coef in colnames(out$Summary)) {
                                                    x = "logFC",
                                                    y = "adj.P.Val",
                                                    ylim = c(0, ydx),#11 o 17   #5 per le Ag HIv e HC
-                                                   #title = "DEG in pTFH of Responder vs Non-Responder after STIM",   
-                                                   title = "",#titlenam,#paste("Ag+ Sw.Memory DEGs profile in HC R"), #coef
+                                                   title = "",
                                                    titleLabSize = 15,
-                                                   subtitle = "",#"Differential expression (limma)",
+                                                   subtitle = "",
                                                    caption = bquote("Cutoffs: "~Log[2]~ "FC: 1.5 ; p-value" [adj] ~ ": 0.05"),
                                                    captionLabSize = 10,
                                                    colCustom = keyvals.colour,
@@ -1268,10 +1339,7 @@ for (coef in colnames(out$Summary)) {
                                                    pCutoff = 0.054,
                                                    FCcutoff = 1.5,
                                                    pointSize = 4,
-                                                   labSize = 7, 
-                                                   #legendLabSize = 20,
-                                                   #legendIconSize = 5,
-                                                   #axisLabSize = 25,
+                                                   labSize = 7,
                                                    colAlpha = 1
                     )
                     volcano_plot <- volcano_plot + theme_classic(base_size = 30)
@@ -1280,8 +1348,8 @@ for (coef in colnames(out$Summary)) {
 }
 
 vol_1 = volcano_list[14]$HC_Ag_RvsHC_Ag_UR
-vol_2 = volcano_list[13]$HIV_Ag_RvsHIV_Ag_UR
-vol_3 = volcano_list[16]$HIV_Ag_URvsHC_Ag_UR
+vol_2 = volcano_list[13]$PHIV_Ag_RvsPHIV_Ag_UR
+vol_3 = volcano_list[16]$PHIV_Ag_URvsHC_Ag_UR
 
 # Hide legends in vol_2 and vol_3 plots
 vol_1 <- vol_1 + theme(legend.position = "none")
@@ -1293,4 +1361,67 @@ plprov_h = vol_1 + plot_spacer() + vol_2 + plot_spacer() + vol_3 + plot_layout(w
 
 ggsave("Figure_5_top.png", plprov_h, height = 12, width = 25, dpi = 600)
 
+############################################################     FIGURE 5 D-E
+
+genes_symbols = c("FOXP1", "CD74", "CXCR4", "CD83", "PAX5",
+                  "POLH", "CD40", "TNFSF13", "IL10RA", "PRDM1",
+                  "MKI67", "BTK", "MX1", "CD22", "CD86",
+                  "BTLA", "CD79B", "DOCK8", "IL6R", "MTOR",
+                  "SELPLG", "CYBB", "TLR9", "FYN", "BAX",
+                  "TNFSF13B", "NFKB1", "CAV1", "GAPDH", "NOTCH2",
+                  "SOCS1", "BATF", "STAT5A", "TRIM5", "MAPK3",
+                  "CD80", "IL10", "STAT3", "IGHM", "PLCG1",
+                  "TIRAP", "IFIT2", "RUNX3", "ETS1", "IGHD",
+                  "IL21R", "CAMK4", "MZB1", "STAT1", "TNFRSF13B",
+                  "FOXO1", "BCL2", "LILRB1", "IL2RA", "SIVA1",
+                  "PIK3C2B", "BCL6", "IFNAR2", "TNSF14", "IRAK4",
+                  "IL4R", "PPP1R13B", "CD27", "ZBTB32", "SLAMF1",
+                  "CXCR3", "BST2", "IRF4", "IKBKG", "SAMHD1",
+                  "PPP3CA", "NOD2", "MYD88", "ABCB1", "NKRF",
+                  "CXCR5", "FOXO3", "SYK", "APOBEC3G", "STAT4",
+                  "PTEN", "ITCH", "FAS", "TCF3", "CD38")
+
+genes_symbols_hiv = c("TNFRSF13B", "IL4R", "IKBKG", "NOD2", "PPP1R13B")
+
+de = mapIds(org.Hs.eg.db, genes_symbols_pv, 'ENTREZID', 'SYMBOL')
+#Per HIV
+de_hiv = mapIds(org.Hs.eg.db, genes_symbols_hiv, 'ENTREZID', 'SYMBOL')
+
+edo <- enrichGO(de, 'org.Hs.eg.db', ont = "BP",  pAdjustMethod = "fdr", minGSSize = 2)
+edox <- setReadable(edo, 'org.Hs.eg.db', 'ENTREZID')
+edox2 <- pairwise_termsim(edox)
+
+edo_hiv <- enrichGO(de_hiv, 'org.Hs.eg.db', ont = "BP",  pAdjustMethod = "fdr", minGSSize = 2)
+edox_hiv <- setReadable(edo_hiv, 'org.Hs.eg.db', 'ENTREZID')
+edox2_hiv <- pairwise_termsim(edox_hiv)
+
+go_hc = mutate(edox2, GeneRatio) %>% 
+  dotplot(x="GeneRatio", showCategory = 10) +
+  scale_color_continuous(type = "gradient", low = "blue", high = "blue") + 
+  scale_size_continuous(range = c(15, 35), breaks = c(1, 2, 3, 4, 5), labels = c("1", "2", "3", "4", "5")) +
+  theme_classic(base_size = 30) + theme(legend.position = "bottom")
+
+go_hc <- go_hc + scale_y_discrete(labels = function(labels) str_wrap(labels, width = 50))
+
+# Remove the legends from individual plots
+go_hc_no_legend <- go_hc + theme_classic(base_size = 30) + theme(legend.position = "right")
+
+go_hiv = mutate(edox2_hiv, GeneRatio) %>% 
+  dotplot(x="GeneRatio", showCategory = 10) +
+  scale_color_continuous(type = "gradient", low = "red", high = "red") + 
+  scale_size_continuous(range = c(15, 25), breaks = c(1, 2, 3), labels = c("1", "2", "3")) +
+  theme_classic(base_size = 30)
+
+# Apply the function to the y-axis labels
+go_hiv <- go_hiv + scale_y_discrete(labels = function(labels) str_wrap(labels, width = 50))
+# Customize the appearance of ticks
+go_hiv <- go_hiv + theme(axis.text = element_text(face = "bold"))
+go_hiv_no_legend <- go_hiv + theme_classic(base_size = 30) + theme(legend.position = "none")
+
+# Combine the plots and specify the position of the legend
+go_plots <- go_hc_no_legend + plot_spacer() + go_hiv_no_legend +
+  plot_layout(guides = 'collect', widths = c(1, 0.1, 1)) 
+
+#versione orizzontale
+ggsave("Figure_5_DE.png", go_plots, height = 15, width = 43, dpi = 600)
 
