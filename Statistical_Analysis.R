@@ -1190,7 +1190,7 @@ mat_clean = mat_clean[, -grep("HC_MenB_013_CD19", colnames(mat_clean))]
 mat_clean[is.na(mat_clean)] <- 40
 
 # Create vector of weights for cyclicloess normalization
-weigt_men = c(rownames(mat_clean))
+weight_men = c(rownames(mat_clean))
 
 # Set all genes to same weight
 weight_men[weight_men != 50] = 1
@@ -1208,7 +1208,7 @@ mu[mu < 13] = 13
 mat_clean = mu
 
 # NORMALIZATION
-bwta_men = normalizeBetweenArrays(mat_clean, method="cyclicloess", weights = weigt_men)
+bwta_men = normalizeBetweenArrays(mat_clean, method="cyclicloess", weights = weight_men)
 
 raw_m <- new("qPCRset", exprs = bwta_men, featureCategory =
                featureCategory(men_cat)[rownames(mat_clean), colnames(mat_clean)])
