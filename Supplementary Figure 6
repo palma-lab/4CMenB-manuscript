@@ -39,6 +39,7 @@ pl_df_late <- df %>%
 # Combine the original data with the duplicated rows
 pl_df_2 <- bind_rows(df, pl_df_early, pl_df_late)
 pl_df_2$Group = factor(pl_df_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
+pl_df_2$TP = factor(pl_df_2$TP, levels = c("T0", "T2", "T3"))
 
 
 # Reorder the levels of the cell_populations variable
@@ -291,15 +292,6 @@ max_y_values <- pl_df_2 %>%
   summarize(max_frequency = max(frequencies))
 
 
-# FIX xvalues of pwc 
-pwc$xmin = c(0.625, 1.12, 1.62, 1.62, 1.62, 3.12)
-pwc$xmax = c(1.12, 1.38, 2.12, 2.38, 2.38, 3.38)
-
-#versione rev2
-pwc$xmin = c(0.625, 1.12, 1.62, 1.62, 3.12)
-pwc$xmax = c(1.12, 1.38, 2.12, 2.38, 3.38)
-
-
 # Merge rows using bind_rows
 merged_btw <- bind_rows(pwc, pwc_2grp)
 
@@ -360,6 +352,8 @@ stat_result_tibble_wtn <- calculate_y_positions(max_y_values,
                                                 stat_result_tibble_wtn)
 stat_result_tibble_btw$y.position = stat_result_tibble_btw$y.position - 2
 
+pl_df_2$Group = factor(pl_df_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
+pl_df_2$TP = factor(pl_df_2$TP, levels = c("T0", "T2", "T3"))
 
 T_tp_1 = ggviolin(pl_df_2, 
                   x = "TP", 
