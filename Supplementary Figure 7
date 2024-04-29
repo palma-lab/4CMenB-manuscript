@@ -1,0 +1,125 @@
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("MatchIt")
+library(ggh4x)
+library(rstatix)
+
+df_T2 = read.xlsx("C:/Users/snnma/OneDrive/Desktop/Progetti/MenB/Paper/Review/MenB_Figures_data.xlsx", 
+               sheet = 12)
+
+df_T2_filtered <- df_T2[(df_T2$Group %in% c("HC", "PHIV")) & (!is.na(df_T2$hSBA)) & (!is.na(df_T2$pTfh.on.TCM)), ]
+
+#NUMERI PER LEGENDA
+df_counts <- df_T2_filtered %>%
+  group_by(Group) %>%
+  summarise(UniquePatients = n_distinct(StudyPID, na.rm = TRUE))
+
+# Print the resulting data frame
+print(df_counts)
+
+
+df_T2_filtered_HC <- df_T2[(df_T2$Group %in% c("HC")) & (!is.na(df_T2$hSBA)), ]
+df_T2_filtered_PHIV <- df_T2[(df_T2$Group %in% c("PHIV")) & (!is.na(df_T2$hSBA)), ]
+
+# Assuming you have two vectors pTfh.on.TCM and hSBA in your df_T2_filtered_HC dataframe
+correlation_result_HC <- cor.test(df_T2_filtered_HC$pTfh.on.TCM, df_T2_filtered_HC$hSBA)
+correlation_result_PHIV <- cor.test(df_T2_filtered_PHIV$pTfh.on.TCM, df_T2_filtered_PHIV$hSBA)
+
+# Extract correlation coefficient and p-value for HC
+correlation_coefficient_HC <- correlation_result_HC$estimate
+p_value_HC <- correlation_result_HC$p.value
+
+# Extract correlation coefficient and p-value for PHIV
+correlation_coefficient_PHIV <- correlation_result_PHIV$estimate
+p_value_PHIV <- correlation_result_PHIV$p.value
+
+# Print the results
+print("HC:")
+print(paste("Correlation coefficient:", correlation_coefficient_HC))
+print(paste("p-value:", p_value_HC))
+
+print("PHIV:")
+print(paste("Correlation coefficient:", correlation_coefficient_PHIV))
+print(paste("p-value:", p_value_PHIV))
+
+################################################################################################################################################# SUPPLEMENTARY FIGURE 7A PLOT
+plot_corr_both <- ggplot(df_T2_filtered, aes(x = pTfh.on.TCM, y = hSBA, color = Group)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", linewidth = 1.5, se = FALSE, aes(group = Group)) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  xlab("pTfh T2") +
+  ylab("hSBA T2") +
+  labs(fontsize = 8) +
+  geom_text(x = 25, y = 450, label = paste("HC r =", round(correlation_coefficient_HC, 2), ", p =", round(p_value_HC, 4)), color = "blue", size = 6, hjust = 0) +
+  geom_text(x = 25, y = 425, label = paste("PHIV r =", round(correlation_coefficient_PHIV, 2), ", p =", round(p_value_PHIV, 4)), color = "red", size = 6, hjust = 0) +
+  theme(plot.title = element_text(size = 20)) +
+  theme_prism(base_size = 30, base_fontface = "plain")
+
+
+################################################################################################################################################# SUPPLEMENTARY FIGURE 7B 
+####  FC
+df_T2_filtered_HC <- df_T2[(df_T2$Group %in% c("HC")) & (!is.na(df_T2$hSBA_FC)), ]
+df_T2_filtered_PHIV <- df_T2[(df_T2$Group %in% c("PHIV")) & (!is.na(df_T2$hSBA_FC)), ]
+
+# Assuming you have two vectors pTfh.on.TCM and hSBA in your df_T2_filtered_HC dataframe
+correlation_result_HC <- cor.test(df_T2_filtered_HC$pTfh.on.TCM, df_T2_filtered_HC$hSBA_FC)
+correlation_result_PHIV <- cor.test(df_T2_filtered_PHIV$pTfh.on.TCM, df_T2_filtered_PHIV$hSBA_FC)
+
+# Extract correlation coefficient and p-value for HC
+correlation_coefficient_HC <- correlation_result_HC$estimate
+p_value_HC <- correlation_result_HC$p.value
+
+# Extract correlation coefficient and p-value for PHIV
+correlation_coefficient_PHIV <- correlation_result_PHIV$estimate
+p_value_PHIV <- correlation_result_PHIV$p.value
+
+# Print the results
+print("HC:")
+print(paste("Correlation coefficient:", correlation_coefficient_HC))
+print(paste("p-value:", p_value_HC))
+
+print("PHIV:")
+print(paste("Correlation coefficient:", correlation_coefficient_PHIV))
+print(paste("p-value:", p_value_PHIV))
+
+plot_corr_both_fc <- ggplot(df_T2_filtered, aes(x = pTfh.on.TCM, y = hSBA_FC, color = Group)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "lm", linewidth = 1.5, se = FALSE, aes(group = Group)) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red")) +
+  xlab("pTfh T2") +
+  ylab(expression(hSBA ~ FC ~ T[0]-T[2])) +
+  labs(fontsize = 8) +
+  geom_text(x = 25, y = 60, label = paste("HC r =", round(correlation_coefficient_HC, 2), ", p =", round(p_value_HC, 4)), color = "blue", size = 6, hjust = 0) +
+  geom_text(x = 25, y = 55, label = paste("PHIV r =", round(correlation_coefficient_PHIV, 2), ", p =", round(p_value_PHIV, 4)), color = "red", size = 6, hjust = 0) +
+  theme(plot.title = element_text(size = 20)) +
+  theme_prism(base_size = 30, base_fontface = "plain") 
+
+############################################################################################################################################### SUPPLEMENTARY FIGURE 7 COMBINED 
+combined =  ggarrange(plot_corr_both, plot_corr_both_fc, 
+                      nrow = 1, 
+                      ncol = 2, 
+                      widths = c(1, 1), 
+                      common.legend = TRUE, 
+                      legend = "right")
+
+combined = grid.arrange(combined, 
+                        ncol = 3, 
+                        widths = c(0.05, 1, 0.05), 
+                        layout_matrix = rbind(c(NA,1,NA)))
