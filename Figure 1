@@ -1,0 +1,437 @@
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("MatchIt")
+library(ggh4x)
+library(rstatix)
+
+men_sba = read.xlsx("MenB_Figures_data.csv", 
+                     sheet = 1) 
+
+names(men_sba)[names(men_sba) == "SBA T0"] <- "SBA_T0"
+names(men_sba)[names(men_sba) == "SBA T2"] <- "SBA_T2"
+names(men_sba)[names(men_sba) == "SBA T3"] <- "SBA_T3"
+
+men_sba$SBA_T0 = as.numeric(men_sba$SBA_T0)
+men_sba$SBA_T2 = as.numeric(men_sba$SBA_T2)
+men_sba$SBA_T3 = as.numeric(men_sba$SBA_T3)
+
+df = as.data.frame(men_sba)
+
+df$Treatment[df$Treatment == "early treated"] = "Early"
+df$Treatment[df$Treatment == "late treated"] = "Late"
+
+df = df %>% 
+  rename(
+    T0 = SBA_T0,
+    T2 = SBA_T2,
+    T3 = SBA_T3
+  )
+
+
+#Keep only rows with both values 
+df_filtered_age = df[, c("StudyPID", "Group", "Gender", "Treatment", "T0", "T2", "T3", "Age_T0")] %>% 
+  filter(!is.na(T0)) %>% 
+  filter(!is.na(T2))  
+
+df_filtered_age$Group = gsub("HIV", "PHIV", df_filtered_age$Group)
+
+df_filtered_age$Group <- as.factor(df_filtered_age$Group)
+
+######################################################################### USE THIS DF FOR NO AGE MATCHED ANALYSIS
+
+nn.match = df_filtered_age
+
+######################################################################### USE THIS DF FOR THE AGE MATCHED ANALYSIS
+df_filtered_age = df_filtered_age %>% 
+  filter(!is.na(Age_T0)) 
+  
+age_test = test_group_difference(df_filtered_age, "Group", "Age_T0")
+
+# No matching; constructing a pre-match matchit object
+m.out0 <- matchit(Group ~ Age_T0, data = df_filtered_age,
+                  method = NULL, distance = "glm")
+summary(m.out0)
+
+m.out1 <- matchit(Group ~ Age_T0 + Gender, data = df_filtered_age, ratio = 2,
+                  method = "full", caliper=0.1)
+
+#This is the age matched df
+nn.match<-match.data(m.out1)
+
+age_test = test_group_difference(nn.match, "Group", "Age_T0")
+
+
+summary(m.out1, un = FALSE)
+
+plot(m.out1, type = "jitter", interactive = FALSE)
+
+plot(m.out1, type = "density", interactive = FALSE,
+     which.xs = ~Age_T0)
+
+#######################################################################################################################
+
+cutoffs <- c(2, 4, 8, 16, 32, 64, 128, 256, 512)
+
+# Reshape the data into the desired format
+
+nn_early <- nn.match %>%
+  filter(Treatment == "Early") %>%
+  mutate(Group = "Early")
+
+nn_late <- nn.match %>%
+  filter(Treatment == "Late") %>%
+  mutate(Group = "Late")
+
+# Combine the original data with the duplicated rows
+nn_merge <- bind_rows(nn.match, nn_early, nn_late)
+
+df_long <- nn_merge %>%
+  pivot_longer(cols = c(T0, T2), names_to = "Value", values_to = "TempValue") %>%
+  mutate(Group = paste(Group, Value, sep = "_"),
+         Value = TempValue) %>%
+  select(-TempValue)
+
+######### CHI SQUARED TEST
+
+compare = df_long[df_long$Group %in% c("HC_T2",
+                                       "PHIV_T2"),]
+
+# Create a contingency table
+contingency_table <- table(df_long$Group, df_long$Value >= 4)
+contingency_table <- table(compare$Group, compare$Value >= 4)
+
+# Perform the chi-squared test
+result <- chisq.test(contingency_table)
+
+# Print the result
+print(result)
+
+################################################################################################################################################ FIGURE 1C: PATIENTS (%) PER hSBA TITERS
+
+#Create frequency df
+freq_df <- as.data.frame(aggregate(Value ~ Group, data = df_long, FUN = function(x) {
+  sapply(cutoffs, function(cutoff) {
+    sum(x >= cutoff) / length(x) * 100
+  })
+}))
+
+treats = freq_df$Group
+
+freq_df = data.frame(freq_df$Value)
+colnames(freq_df) = cutoffs
+freq_df$Group = treats
+
+
+# Reshape the data into the desired format
+freq_df_long <- freq_df %>%
+  gather(key = "Cutoff", value = "Value", -Group)
+
+# Order the levels of the "Cutoff" variable
+freq_df_long$Cutoff <- factor(freq_df_long$Cutoff, levels = as.character(cutoffs))
+freq_df_long$Group <- factor(freq_df_long$Group, levels = c("HC_T0", "PHIV_T0", "Early_T0", "Late_T0",
+                                                            "HC_T2", "PHIV_T2", "Early_T2", "Late_T2"))
+
+# Plot the data
+plot_1 = ggplot(freq_df_long, aes(x = Cutoff, y = Value, color = Group)) +
+  geom_vline(xintercept = "4", linetype = "dashed", color = "darkgrey", size = 1) +  # Add horizontal line
+  geom_line(size = 1.5, aes(group = Group, linetype = Group)) +
+  geom_point(size = 4) +
+  geom_rect(aes(xmin=0, xmax=2,ymin=-Inf,ymax=Inf), color = NA, fill='gainsboro', alpha= 0.02) +
+  labs(x = "hSBA", y = "Patients (%)", color = "Group", fontsize = 8) +
+  scale_color_manual(values = c("HC_T0" = "blue", 
+                                "PHIV_T0" = "red",
+                                "Early_T0" = 'darkcyan',
+                                "Late_T0" = 'darkorange',
+                                "HC_T2" = "blue", 
+                                "PHIV_T2" = "red",
+                                "Early_T2" = 'darkcyan',
+                                "Late_T2" = 'darkorange')) +
+  scale_linetype_manual(values = c("HC_T0" = "dashed", 
+                                   "PHIV_T0" = "dashed", 
+                                   "Early_T0" = 'dashed',
+                                   "Late_T0" = 'dashed',
+                                   "HC_T2" = "solid", 
+                                   "PHIV_T2" = "solid",
+                                   "Early_T2" = 'solid',
+                                   "Late_T2" = 'solid')) +
+  ggtitle("Patients (%) per hSBA titers") +
+  theme_classic(base_size = 30) + 
+  theme(legend.key.size = unit(1.5, "cm"))
+
+################################################################################################################################################ FIGURE 1D: hSBA LONGITUDINAL ANALYSIS 
+
+longit = nn.match[complete.cases(nn.match$T0, nn.match$T2, nn.match$T3), ]
+
+nn_merge_longit = nn_merge[nn_merge$StudyPID %in% longit$StudyPID,]
+
+df_plot <- nn_merge_longit %>%
+  pivot_longer(cols = c(T0, T2, T3),
+               names_to = "time",
+               values_to = "value") %>%
+  mutate(time = factor(time, levels = c("T0", "T2", "T3")))
+
+df_plot$Group <- factor(df_plot$Group, levels = c("HC", "PHIV", "Early", "Late"))
+
+
+#check for normality assumption
+shapiro = df_plot %>%
+  group_by(time, Group) %>%
+  shapiro_test(value)
+
+# homogeneity of variance assumption of the between-subject factor (group)
+df_plot %>%
+  group_by(time) %>%
+  levene_test(value ~ Group)
+
+# Two-way mixed ANOVA test
+res.aov <- anova_test(
+  data = df_plot, dv = value, wid = StudyPID,
+  between = Group, within = time
+) %>%
+get_anova_table(res.aov)
+
+## DATA ARE NOT NORMAL DISTRIBUTED
+# Kruskal-Wallis test for each time point
+one.way <- df_plot %>%
+  group_by(time) %>%
+  kruskal_test(value ~ Group) %>%
+  adjust_pvalue(method = "fdr")
+
+print(one.way)
+
+# Pairwise comparisons between group levels
+pwc <- df_plot %>%
+  group_by(time) %>%
+  pairwise_wilcox_test(value ~ Group, 
+                  comparisons = list(c("HC", "PHIV"),
+                                     c("HC", "Early"),
+                                     c("HC", "Late"),
+                                     c("Early", "Late")), 
+                  p.adjust.method = "fdr")
+pwc
+
+pwc <- pwc %>% add_xy_position(x = "time", group = "Group", step.increase= 0.05)
+
+# Effect of time at each level of exercises group
+one.way2 <- df_plot %>%
+  group_by(Group) %>%
+  kruskal_test(value ~ time) %>%
+  adjust_pvalue(method = "fdr")
+
+one.way2
+
+# Pairwise comparisons between group levels DUNN
+pwc2 <- df_plot %>%
+  group_by(Group) %>%
+  dunn_test(value ~ time,  
+            p.adjust.method = "fdr")
+
+pwc2
+
+pwc2 <- pwc2 %>% filter(p.adj.signif != "ns")
+
+pwc2 <- pwc2 %>% add_xy_position(x = "time", group = "Group")
+
+mxt = 550
+mni = 375
+pwc2$y.position = seq(from = mxt, to = mxt + (((mxt-mni)/3)*nrow(pwc2)), by = ((mxt-mni)/3))[-1]
+pwc2$p.adj =  ifelse(round(pwc2$p.adj, 3) < 0.001, "< 0.001", round(pwc2$p.adj, 3))
+
+
+# plot the values with Group as hue
+
+fc_tp_1 = ggplot(df_plot, aes(x = time, y = value, color = Group, fill = Group)) +
+  geom_boxplot(alpha = 0.6) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan', "Late" = 'darkorange')) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan', "Late" = 'darkorange')) +
+  labs(x = "Time Points", y = "hSBA", color = "Group", title = "hSBA Values by Group", size = 8) +
+  stat_summary(fun = "median", 
+               aes(colour = Group), 
+               geom = "crossbar", 
+               width = 0.6,
+               position = position_dodge(width = 0.75)) +
+  stat_summary(fun = median, geom = "line", aes(group = Group, color = Group), linewidth = 1.5, position = position_dodge(width = 0.75)) +
+  geom_signif(xmin = pwc2$xmin, xmax = pwc2$xmax, annotations=pwc2$p.adj, y_position = pwc2$y.position, 
+              manual=F, vjust = 0, tip_length = 0.01, textsize = 6, color = "black", margin_top = 1) +
+  geom_jitter(position = position_jitterdodge(dodge.width = 0.75), alpha = 0.6, size = 3) +  # Add dodged points to the plot()
+  scale_x_discrete(labels = c("T0", "T2", "T3")) +
+  theme_classic(base_size = 30) 
+
+################################################################################################################################################ FIGURE 1E: FC ANALYSIS
+
+df = nn.match
+
+df$SBA_FC = log2(df$T2 / df$T0)
+df$Seroprotection <- ifelse(df$T0 < 4, "NSP", "SP")
+
+
+df = df[complete.cases(df$SBA_FC), ]
+
+df_phiv_early <- df %>%
+  filter(Treatment == "Early") %>%
+  mutate(Group = "Early")
+
+df_phiv_late <- df %>%
+  filter(Treatment == "Late") %>%
+  mutate(Group = "Late")
+
+# Combine the original data with the duplicated rows
+df <- bind_rows(df, df_phiv_early, df_phiv_late)
+
+df = df[complete.cases(df$Group), ]
+
+df$Group <- factor(df$Group, levels = c("HC", "PHIV", "Early", "Late"))
+
+######### CHI SQUARED TEST
+
+nohiv = df[df$Group %in% c("HC", "PHIV"),]
+nohiv$Group = factor(nohiv$Group)
+
+contingency_table <- table(df$Group, cut(df$SBA_FC, breaks = c(-Inf, 1, Inf), labels = c("NSC", "SC")))
+contingency_table <- table(nohiv$Group, cut(nohiv$SBA_FC, breaks = c(-Inf, 1, Inf), labels = c("NSC", "SC")))
+
+
+# Perform chi-squared test
+chi_squared_result <- chisq.test(contingency_table)
+
+# Print the result
+print(chi_squared_result)
+
+###########
+
+#check for normality assumption
+df %>%
+  group_by(Group) %>%
+  shapiro_test(SBA_FC)
+
+
+# homogeneity of variance assumption of the between-subject factor (group)
+df %>%
+  levene_test(SBA_FC ~ Group)
+
+# Two-way mixed ANOVA test
+res.aov <- anova_test(
+  data = df, dv = SBA_FC, wid = StudyPID,
+  between = Group
+) %>%
+  get_anova_table(res.aov)
+
+
+#### DATA ARE NOT NORMAL DISTRIBUTED:
+# Kruskal-Wallis test for each time point
+one.way <- df %>%
+  filter(Group != "PHIV") %>% 
+  kruskal_test(SBA_FC ~ Group) %>%
+  adjust_pvalue(method = "fdr")
+
+# Pairwise comparisons
+pwc <- df %>%
+  filter(Group != "PHIV") %>% 
+  tukey_hsd(SBA_FC ~ Group)
+
+pwc_2 <- pwc %>% 
+  filter(p.adj.signif != "ns") %>%
+  add_xy_position(x = "Group", 
+                  scales = "free_y", 
+                  fun = "max",
+                  step.increase= 0.1)
+
+
+
+fc_t0t2_1 <- ggplot(df, aes(x = Group, y = SBA_FC, color = Group)) +
+  geom_jitter(aes(fill = Group, size = T0),
+              position = position_jitter(width = 0.2, height = .05),
+              alpha = .35) +
+  geom_hline(yintercept = 2, linetype = "dashed", color = "red", size = 1) +
+  geom_text(aes(x = 0.7, y = 2.15, 
+                label = paste0("SC=", sum(df$SBA_FC[df$Group == "HC"] >= 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "HC"] >= 2, na.rm = T) / sum(df$Group == "HC")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 1.65, y = 2.15, 
+                label = paste0("SC=", sum(df$SBA_FC[df$Group == "PHIV"] >= 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "PHIV"] >= 2, na.rm = T) / sum(df$Group == "PHIV")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 2.65, y = 2.15, 
+                label = paste0("SC=", sum(df$SBA_FC[df$Group == "Early"] >= 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "Early"] >= 2, na.rm = T) / sum(df$Group == "Early")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 3.65, y = 2.15, 
+                label = paste0("SC=", sum(df$SBA_FC[df$Group == "Late"] >= 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "Late"] >= 2, na.rm = T) / sum(df$Group == "Late")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 0.7, y = 1.25, 
+                label = paste0("NSC=", sum(df$SBA_FC[df$Group == "HC"] < 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "HC"] < 2, na.rm = T) / sum(df$Group == "HC")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 1.65, y = 1.25, 
+                label = paste0("NSC=", sum(df$SBA_FC[df$Group == "PHIV"] < 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "PHIV"] < 2, na.rm = T) / sum(df$Group == "PHIV")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 2.65, y = 1.25, 
+                label = paste0("NSC=", sum(df$SBA_FC[df$Group == "Early"] < 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "Early"] < 2, na.rm = T) / sum(df$Group == "Early")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  geom_text(aes(x = 3.65, y = 1.25, 
+                label = paste0("NSC=", sum(df$SBA_FC[df$Group == "Late"] < 2, na.rm = T),
+                               " (", scales::percent(sum(df$SBA_FC[df$Group == "Late"] < 2, na.rm = T) / sum(df$Group == "Late")), ")")),
+            size = 5, hjust = 0.5, vjust = -0.75, color = "black") +
+  stat_compare_means(comparisons = list(c("HC", "PHIV"),
+                                        c("Early", "Late")), #valutare se tenere o no
+                     label = "p.format", 
+                     method = "wilcox.test",
+                     tip.length = 0.01,
+                     method.args = list(exact = FALSE),
+                     size = 6.5) +
+stat_summary(fun.data = "mean_cl_boot", 
+             colour = "black", 
+             geom = "crossbar", 
+             width = 0.2) +
+  labs(x = "Group", 
+       y = expression(hSBA ~ log[2] ~ FC ~ T[0]-T[2]), 
+       title = "hSBA Fold Change T0-T2", fontsize = 8) +
+  # Customize legend labels with counts
+  scale_color_manual(values = c("HC" = "blue", 
+                                "PHIV" = "red", 
+                                "Early" = "darkcyan", 
+                                "Late" = "darkorange")
+                     ) +
+  scale_fill_manual(values = c("HC" = "blue", 
+                               "PHIV" = "red", 
+                               "Early" = "darkcyan", 
+                               "Late" = "darkorange")
+                    ) +
+  scale_size_continuous(range = c(3, 26), 
+                        breaks = c(2, 4, 8, 16, 32, 64, 128, 256, 512)
+                        ) +
+  guides(color = guide_legend(override.aes = list(size = 6))
+         ) +
+  guides(shape = guide_legend(override.aes = list(size = 6))
+         ) +
+  theme_classic(base_size = 30) +
+  stat_pvalue_manual(pwc_2,
+                     tip.length = 0.01,
+                     step.increase = 0.025,
+                     label = "{round(p.adj, 2)}",
+                     size = 6.5) 
+  
+
+# Print the plot
+print(fc_t0t2_1)   
+
