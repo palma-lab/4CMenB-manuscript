@@ -58,7 +58,7 @@ df_filtered_age$Group <- as.factor(df_filtered_age$Group)
 
 nn.match = df_filtered_age
 
-######################################################################### USE THIS DF FOR THE AGE MATCHED ANALYSIS
+######################################################################### USE THIS DF FOR THE AGE MATCHED ANALYSIS (SUPPLEMENTARY FIGURE 1)
 df_filtered_age = df_filtered_age %>% 
   filter(!is.na(Age_T0)) 
   
