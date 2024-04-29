@@ -1,0 +1,159 @@
+test_group_difference <- function(df, group_col, selected_col, pair = FALSE) {
+  # Load necessary packages
+  library(tidyverse)
+  library(car)
+  df = filter(df, !is.na(!!sym(selected_col)))
+  df[[group_col]] = factor(df[[group_col]])
+  
+  # Check if the selected column and group column exist in the data frame
+  if (!(selected_col %in% names(df))) {
+    stop(paste("Error: Selected column", selected_col, "does not exist in data frame."))
+  }
+  if (!(group_col %in% names(df))) {
+    stop(paste("Error: Group column", group_col, "does not exist in data frame."))
+  }
+  
+  # Split the data frame by the group column
+  groups <- df %>% 
+    split(.[[group_col]])
+  
+  # Check if there are only two groups
+  if (length(groups) != 2) {
+    stop("Error: This function is designed to test differences between two groups only.")
+  }
+  
+  # Test for normality and equal variance of the two groups
+  normality_test <- tapply(df[[selected_col]], df[[group_col]], shapiro.test)
+  equal_var_test <- leveneTest(df[[selected_col]] ~ df[[group_col]])
+  
+  # If normality and equal variance assumptions are met, perform Welch's t-test
+  if (all(sapply(normality_test, function(x) x$p.value > 0.05)) & equal_var_test$'Pr(>F)'[1] > 0.05) {
+    t_test <- t.test(df[[selected_col]] ~ df[[group_col]], 
+                     var.equal = TRUE, 
+                     na.rm = T,
+                     paired = pair)
+    return(t_test)
+  } else if (all(sapply(normality_test, function(x) x$p.value >= 0.05)) & equal_var_test$'Pr(>F)'[1] <= 0.05) {
+    t_test <- t.test(df[[selected_col]] ~ df[[group_col]], 
+                     var.equal = FALSE, 
+                     na.rm = T,
+                     paired = pair)
+    return(t_test)
+  } else {
+    # If normality assumptions are not met, perform Wilcoxon rank sum test
+    wilcox_test <- wilcox.test(df[[selected_col]] ~ df[[group_col]], 
+                               na.rm = T, 
+                               exact = F,
+                               paired = pair)
+    return(wilcox_test)
+  }
+}
+
+test_group_difference_full <- function(df, group_col, selected_col) {
+  # Load necessary packages
+  library(tidyverse)
+  
+  # Filter out NA values in the selected column
+  df = df[complete.cases(df[[selected_col]]), ]
+  
+  df[[group_col]] = factor(df[[group_col]])
+  
+  # Check if the selected column and group column exist in the data frame
+  if (!(selected_col %in% names(df))) {
+    stop(paste("Error: Selected column", selected_col, "does not exist in the data frame."))
+  }
+  if (!(group_col %in% names(df))) {
+    stop(paste("Error: Group column", group_col, "does not exist in the data frame."))
+  }
+  
+  # Split the data frame by the group column
+  groups <- df %>% 
+    split(.[[group_col]])
+  
+  # Check if there are more than two groups
+  if (length(groups) < 2) {
+    stop("Error: This function is designed to test differences between at least two groups.")
+  }
+  
+  # Initialize a list to store results
+  results <- list()
+  
+  # Loop through all combinations of groups
+  group_combinations <- combn(unique(df[[group_col]]), 2, simplify = FALSE)
+  
+  for (group_pair in group_combinations) {
+    # Extract the data for the current group pair
+    current_data <- df[df[[group_col]] %in% group_pair, ]
+    
+    # Test for normality of the two groups
+    normality_test <- lapply(group_pair, function(group) shapiro.test(current_data[current_data[[group_col]] == group, ][[selected_col]]))
+    
+    # Check for missing values in normality test results
+    if (any(sapply(normality_test, function(x) any(is.na(x$p.value))))) {
+      stop("Error: Missing values in normality test results.")
+    }
+    
+    print(normality_test)
+    # If normality assumptions are not met, perform Wilcoxon rank sum test
+    if (any(sapply(normality_test, function(x) x$p.value < 0.05))) {
+      wilcox_test <- wilcox.test(current_data[[selected_col]] ~ current_data[[group_col]], na.rm = TRUE, exact = FALSE)
+      results[[paste(group_pair, collapse = "_")]] <- wilcox_test
+    } else {
+      # If normality assumptions are met, perform Welch's t-test
+      equal_var_test <- leveneTest(current_data[[selected_col]] ~ current_data[[group_col]])
+      
+      if (equal_var_test$'Pr(>F)'[1] > 0.05) {
+        t_test <- t.test(current_data[[selected_col]] ~ current_data[[group_col]], var.equal = TRUE, na.rm = TRUE)
+        results[[paste(group_pair, collapse = "_")]] <- t_test
+      } else {
+        t_test <- t.test(current_data[[selected_col]] ~ current_data[[group_col]], var.equal = FALSE, na.rm = TRUE)
+        results[[paste(group_pair, collapse = "_")]] <- t_test
+      }
+    }
+  }
+  
+  return(results)
+}
+
+test_group_difference_anova <- function(df, group_col, selected_col, padj = "holm") {
+  # Load necessary packages
+  library(tidyverse)
+  
+  # Filter out NA values in the selected column
+  df = df[complete.cases(df[[selected_col]]), ]
+  df[[group_col]] = as.factor(df[[group_col]])
+  
+  # Check if the selected column and group column exist in the data frame
+  if (!(selected_col %in% names(df))) {
+    stop(paste("Error: Selected column", selected_col, "does not exist in the data frame."))
+  }
+  if (!(group_col %in% names(df))) {
+    stop(paste("Error: Group column", group_col, "does not exist in the data frame."))
+  }
+  
+  # Perform ANOVA
+  anova_result <- aov(as.formula(paste(selected_col, "~", group_col)), data = df)
+  print(anova_result)
+  
+  levene_result <- levene_test(data = df, as.formula(paste(selected_col, "~", group_col)))
+  
+  # Check for normality of residuals
+  normality_test <- shapiro.test(residuals(anova_result))
+  
+  # If normality assumptions are not met, perform Kruskal-Wallis test
+  if (normality_test$p.value < 0.05) {
+    kruskal_test <- kruskal.test(as.formula(paste(selected_col, "~", group_col)), 
+                                 data = df)
+    dunn <- df %>% dunn_test(as.formula(paste(selected_col, "~", group_col)),  p.adjust.method = padj)
+    return(list(Kruskal_Wallis_Test = kruskal_test, Levene_Test = levene_result, Dunn_Test = dunn))
+  }
+  
+  # If normality assumptions are met, perform Tukey post-hoc test
+  tukey_result <- tukey_hsd(anova_result, which = group_col)
+  
+  return(list(ANOVA_Test = anova_result, Levene_Test = levene_result, Tukey_Posthoc_Test = tukey_result))
+}
+
+#funzione per estrarre nelemnth da un array
+nth_element <- function(vector, starting_position, n) { 
+  vector[seq(starting_position, length(vector), n)] }
