@@ -1,0 +1,218 @@
+############################################################################################################################# FIGURE 2 PLOT
+
+df = read.xlsx("Supporting Data Values.xlsx", 
+                sheet = 3)
+order_ag = c(
+  "fHbp+ CD27+IgD-IgG+ (Switched Memory)",
+  "fHbp+ CD27+ CD21- (Activated Memory)",
+  "fHbp+ CD27- CD21- (Tissue like Memory)")
+
+df_ag = df[df$cell_populations %in% order_ag,]
+
+df_ag$cell_populations <- factor(df_ag$cell_populations, levels = order_ag)
+
+
+df_ag$Group = as.factor(df_ag$Group)
+df_ag$Gender = as.factor(df_ag$Gender)
+
+
+############################################################################################################### AGE MATCHED DF
+cd19 = df_ag[df_ag$cell_populations == "fHbp+ CD27+IgD-IgG+ (Switched Memory)", ]
+
+age_test = test_group_difference(cd19, "Group", "Age_T2")
+
+# No matching; constructing a pre-match matchit object
+m.out0 <- matchit(Group ~ Age_T2, data = cd19,
+                  method = NULL, distance = "glm")
+summary(m.out0)
+
+m.out1 <- matchit(Group ~ Age_T2, data = cd19,
+                  method = "full", ratio = 2, caliper=0.1, 
+                  m.order = "data")
+
+nn.match<-match.data(m.out1)
+
+age_test = test_group_difference(nn.match, "Group", "Age_T2")
+
+
+summary(m.out1, un = FALSE)
+
+plot(m.out1, type = "jitter", interactive = FALSE)
+plot(m.out1, type = "density", interactive = FALSE,
+     which.xs = ~Age_T2)
+
+##################################################################################################################
+
+df_ag_early <- df_ag %>%
+  filter(Treatment == "early treated") %>%
+  mutate(Group = "Early")
+
+df_ag_late <- df_ag %>%
+  filter(Treatment == "late treated") %>%
+  mutate(Group = "Late")
+
+# Combine the original data with the duplicated rows
+df_ag_2 <- bind_rows(df_ag, df_ag_early, df_ag_late)
+df_ag_2$Group = factor(df_ag_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
+
+df_ag_2$cell_populations <- gsub('fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)', 'fHbp+ SM', df_ag_2$cell_populations)
+df_ag_2$cell_populations = gsub('fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)', 'fHbp+ TLM', df_ag_2$cell_populations)
+df_ag_2$cell_populations = gsub('fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)', 'fHbp+ AM', df_ag_2$cell_populations)
+
+df_ag_2$cell_populations = factor(df_ag_2$cell_populations, levels = c("fHbp+ SM","fHbp+ AM", "fHbp+ TLM"))
+
+################################################### STATISTICAL ANALYSIS:
+
+#NO AGE MATCHED 
+df1 = df_ag_2
+#AGE MATCHED
+df1 = df_ag_2[(df_ag_2$StudyPID %in% nn.match$StudyPID),]
+
+
+
+df1$Group = factor(df1$Group, levels = c("HC", "PHIV", "Early", "Late"))
+df2 = df1[df1$Group != "PHIV", ]
+df2$Group = factor(df2$Group, levels = c("HC", "Early", "Late"))
+
+df1$cell_populations = gsub("fHbp\\+ SM", "fHbp+ on SM", df1$cell_populations)
+df1$cell_populations = gsub("fHbp\\+ AM", "AM on fHbp+", df1$cell_populations)
+df1$cell_populations = gsub("fHbp\\+ TLM", "TLM on fHbp+", df1$cell_populations)
+df1$cell_populations = factor(df1$cell_populations, levels = c("fHbp+ on SM", "AM on fHbp+", "TLM on fHbp+"))
+
+conting = df1[df1$cell_populations == "fHbp+ on SM", ]
+table(conting$Group)
+
+#check for normality assumption
+shapiro = df1 %>%
+  group_by(cell_populations, Group) %>%
+  shapiro_test(frequencies)
+
+pwc <- df1 %>%
+  group_by(cell_populations) %>%
+  filter(Group != "PHIV") %>% 
+  test_group_difference_anova("Group", "frequencies", padj = "fdr")
+
+pwc_2 <- pwc[[3]] %>% 
+  add_xy_position(x = "Group", 
+                  scales = "free_y", 
+                  fun = "max",
+                  step.increase= 0.1)
+
+#plot SM
+el_plot_1 <- ggviolin(df1[df1$cell_populations == "fHbp+ on SM",], 
+                      x = "Group", 
+                      y = "frequencies", 
+                      fill = "Group", 
+                      #facet.by = "cell_populations",
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("jitter", "boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  stat_compare_means( 
+    comparisons = list(c("HC", "PHIV")), 
+    label = "p.format", 
+    tip.length = 0.01,
+    size = 6, 
+    method = "t.test", 
+    method.args = list(exact = FALSE)) +
+  xlab("") +
+  labs(fontsize = 8) +
+  ylab("% of fHbp+ on SM") + 
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(pwc_2[pwc_2$cell_populations == "fHbp+ on SM",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     step.increase = 0.015,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) 
+
+#plot AM
+el_plot_2 <- ggviolin(df1[df1$cell_populations == "AM on fHbp+",], 
+                      x = "Group", 
+                      y = "frequencies", 
+                      fill = "Group", 
+                      #facet.by = "cell_populations",
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("jitter", "boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  stat_compare_means( 
+    comparisons = list(c("HC", "PHIV")), 
+    label = "p.format", 
+    tip.length = 0.01,
+    size = 6, 
+    method = "wilcox.test", 
+    method.args = list(exact = FALSE)) +
+  xlab("") +
+  labs(fontsize = 8) +
+  ylab("% of AM on fHbp+") + 
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(pwc_2[pwc_2$cell_populations == "AM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     step.increase = 0.015,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) 
+
+#plot TLM
+el_plot_3 <- ggviolin(df1[df1$cell_populations == "TLM on fHbp+",], 
+                      x = "Group", 
+                      y = "frequencies", 
+                      fill = "Group", 
+                      #facet.by = "cell_populations",
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("jitter", "boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  stat_compare_means( 
+    comparisons = list(c("HC", "PHIV")), 
+    label = "p.format", 
+    tip.length = 0.01,
+    size = 6, 
+    method = "wilcox.test", 
+    method.args = list(exact = FALSE)) +
+  xlab("") +
+  ylab("% of TLM on fHbp+") +
+  labs(fontsize = 8) + 
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(pwc_2[pwc_2$cell_populations == "TLM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     step.increase = 0.015,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) 
+
+############################################################################################### FIGURE 3A PLOT
+new =  ggarrange(el_plot_1, el_plot_2, el_plot_3, 
+                 nrow = 1, 
+                 ncol = 3, 
+                 widths = c(1, 1, 1), 
+                 common.legend = TRUE, 
+                 legend = "right")
