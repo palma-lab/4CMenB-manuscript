@@ -1,0 +1,190 @@
+##################
+library(patchwork)
+library(openxlsx)
+
+########## VERSIONE VIOLIN FREQ ALESSIA
+
+df = read.xlsx("MenB_Figures_data.xlsx", 
+                sheet = 3)
+
+t2_data = read.xlsx("MenB_Figures_data.xlsx", 
+                sheet = 1)
+
+df_merged <- merge(df, t2_data[c("StudyPID", "Age_T2")], by = "StudyPID", all.x = TRUE)
+
+
+# Reorder the levels of the cell_populations variable
+order_notag = c("CD19+", 
+                "CD27-IgD+ (Naive)",
+                "CD27+IgD+ (USM)",
+                "CD27+IgD- (SM)",
+                "CD27-IgD- (DN)",
+                "CD27+CD21- (AM)",
+                "CD27-CD21- (TLM)")
+
+
+df_notag = df_merged[df_merged$cell_populations %in% order_notag,]
+
+df_notag$cell_populations <- factor(df_notag$cell_populations, levels = order_notag)
+
+
+df_notag$Group = as.factor(df_notag$Group)
+df_notag$Gender = as.factor(df_notag$Gender)
+
+########################################################################### NO AGE MATCH:
+plot_df = df_notag 
+
+########################################################################### USE THIS DF FOR AGE MATCHED ANALYSIS
+
+cd19 = df_notag[df_notag$cell_populations == "CD19+", ]
+
+
+age_test = test_group_difference(cd19, "Group", "Age_T2")
+
+# No matching; constructing a pre-match matchit object
+m.out0 <- matchit(Group ~ Age_T2 + Gender, data = cd19,
+                  method = NULL, distance = "glm")
+summary(m.out0)
+
+m.out1 <- matchit(Group ~ Age_T2, data = cd19,
+                  method = "full", ratio = 2, caliper=0.1, 
+                  m.order = "data")
+
+nn.match<-match.data(m.out1)
+
+age_test = test_group_difference(nn.match, "Group", "Age_T2")
+
+
+summary(m.out1, un = FALSE)
+
+plot(m.out1, type = "jitter", interactive = FALSE)
+plot(m.out1, type = "density", interactive = FALSE,
+     which.xs = ~Age_T2)
+
+nn.match$cell_populations <- factor(nn.match$cell_populations, levels = order_notag)
+plot_df = df_notag[df_notag$StudyPID %in% nn.match$StudyPID, ]
+
+##################################################################################################################
+
+plot_df_early <- plot_df %>%
+  filter(Treatment == "early treated") %>%
+  mutate(Group = "Early")
+
+plot_df_late <- plot_df %>%
+  filter(Treatment == "late treated") %>%
+  mutate(Group = "Late")
+
+# Combine the original data with the duplicated rows
+plot_df_2 <- bind_rows(plot_df, plot_df_early, plot_df_late)
+plot_df_2$Group = factor(plot_df_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
+plot_df_2$facet = ifelse(plot_df_2$cell_populations == "CD19+", "Lymphocytes", "B cells")
+plot_df_2$facet = factor(plot_df_2$facet, levels = c("Lymphocytes", "B cells"))
+plot_df_2$cell_populations = factor(plot_df_2$cell_populations, levels = c("CD19+",
+                                                                           "CD27-IgD+ (Naive)",
+                                                                           "CD27+IgD+ (USM)",
+                                                                           "CD27+IgD- (SM)",
+                                                                           "CD27-IgD- (DN)",
+                                                                           "CD27+CD21- (AM)",
+                                                                           "CD27-CD21- (TLM)"))
+
+
+#check for normality assumption
+shapiro = plot_df_2 %>%
+  group_by(cell_populations, Group) %>%
+  shapiro_test(frequencies)
+
+# homogeneity of variance assumption of the between-subject factor (group)
+plot_df_2 %>%
+  group_by(cell_populations) %>%
+  levene_test(frequencies ~ Group)
+
+# Effect of group at each time point
+one.way <- plot_df_2 %>%
+  group_by(cell_populations) %>%
+  anova_test(dv = frequencies, wid = StudyPID, between = Group) %>%
+  get_anova_table() %>%
+  adjust_pvalue(method = "fdr")
+one.way
+
+# Step 2: Perform tests based on normality results
+results_list <- list()
+
+# Iterate through each unique cell_populations
+for (cp in unique(shapiro$cell_populations)) {
+  
+  # Check if at least one group is not normal
+  non_normal_groups <- any(shapiro$p < 0.05 & shapiro$cell_populations == cp)
+  
+  # Filter data for the specific cell_population
+  subset_data <- plot_df_2 %>%
+    filter(cell_populations == cp)
+  
+  # Perform test based on normality
+  if (non_normal_groups) {
+    # If at least one group is not normal, perform Dunn test
+    result <- subset_data %>%
+      filter(Group != "PHIV") %>%
+      group_by(facet, cell_populations) %>%
+      dunn_test(frequencies ~ Group, p.adjust.method = "fdr") %>%
+      select(-statistic) %>% add_xy_position(x = "Group", scales = "free_y", step.increase = 0.1)
+  } else {
+    # If all groups are normal, perform pairwise t-test
+    result <- subset_data %>%
+      filter(Group != "PHIV") %>%
+      group_by(facet, cell_populations) %>%
+      pairwise_t_test(frequencies ~ Group, p.adjust.method = "fdr") %>%
+      select(-p.signif) %>% add_xy_position(x = "Group", scales = "free_y", step.increase = 0.1)
+  }
+  
+  # Add the result to the list
+  results_list[[cp]] <- result
+}
+
+# Step 3: Merge all the results
+final_results <- do.call(rbind, results_list)
+
+
+pwc2 <- final_results %>% filter(p.adj.signif != "ns")
+pwc2$p.adj =  ifelse(round(pwc2$p.adj, 3) < 0.001, "< 0.001", round(pwc2$p.adj, 3))
+
+pwc2$y.position = pwc2$y.position +1 
+
+############################################################################################################################# FIGURE 2 PLOT
+
+fig2 = ggviolin(plot_df_2, 
+                    x = "Group", 
+                    y = "frequencies", 
+                    fill = "Group", 
+                    #facet.by = c("facet", "cell_populations"),
+                    scale = "width",
+                    position = position_dodge(width = 1),
+                    trim = T,
+                    alpha = 0.6,
+                    scales = "free_y", 
+                    add = c("jitter", "boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  stat_compare_means(aes(group = Group),
+    comparisons = list(c("HC", "PHIV")), 
+    label = "p.format", 
+    tip.length = 0.01,
+    hide.ns = TRUE,
+    size = 6, 
+    method = "wilcox", 
+    method.args = list(exact = FALSE)) +
+  stat_compare_means(aes(group = Group),
+                     comparisons = list(c("Early", "Late")), 
+                     label = "p.format", 
+                     tip.length = 0.01,
+                     hide.ns = TRUE,
+                     size = 6, 
+                     method = "wilcox", 
+                     method.args = list(exact = FALSE)) +
+  xlab("") +
+  ylab("Frequency (%)") +
+  labs(fontsize = 8) +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 20)) +
+  theme(strip.text = element_text(size = 20)) +
+  stat_pvalue_manual(pwc2,  hide.ns = T, label = "p.adj", size = 6, tip.length = 0.01) +
+  facet_nested_wrap(facet ~ cell_populations, scales = "free_y", nrow = 1) +
+  scale_y_continuous(expand = expansion(mult = c(0.1, 0.1)))
