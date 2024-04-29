@@ -1,3 +1,28 @@
+###Author Marco Sanna (marco-sanna) 29/04/2023
+
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("MatchIt")
+library(ggh4x)
+library(rstatix)
+
 df = read.xlsx("Supporting Data Values.xlsx", 
                sheet = 4)
 
