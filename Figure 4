@@ -24,7 +24,7 @@ library(ggh4x)
 library(rstatix)
 
 
-inp_men = read.delim("Combined_Chip_Run_MeN.csv", 
+inp_men = read.delim("FLUIDIGM_Combined_Chip_Run_MenB.csv", 
                      skip = 11, 
                      sep = ",", 
                      colClasses= "character")
@@ -32,7 +32,7 @@ inp_men = read.delim("Combined_Chip_Run_MeN.csv",
 men_meta = read.csv("MenB_Fluidigm_meta.csv", row.names = 1)
 
 #LOAD FLUIDIGM Ct DATA
-men_ct = readCtData(files = "Combined_Chip_Run_MeN.csv", 
+men_ct = readCtData(files = "FLUIDIGM_Combined_Chip_Run_MenB.csv", 
                     n.features = 96,
                     n.data = length(samplenames_men),
                     samples = samplenames_men,
