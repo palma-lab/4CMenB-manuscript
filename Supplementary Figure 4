@@ -27,21 +27,32 @@ library(rstatix)
 df = read.xlsx("Supporting Data Values.xlsx", 
                 sheet = 3)
 
-# Reorder the levels of the cell_populations variable
-order_notag = c("CD19+", 
-                "CD27-IgD+ (Naive)",
-                "CD27+IgD+ (USM)",
-                "CD27+IgD- (SM)",
-                "CD27-IgD- (DN)",
-                "CD27+CD21- (AM)",
-                "CD27-CD21- (TLM)")
 
+order_ag = c(
+  "fHbp+ CD27+IgD-IgG+ (Switched Memory)",
+  "fHbp+ CD27+ CD21- (Activated Memory)",
+  "fHbp+ CD27- CD21- (Tissue like Memory)")
 
-df1 = df[df$cell_populations %in% order_notag,]
+df1 = df[(df$cell_populations %in% order_ag) & (df$TP == "T2"),]
+
+df1$cell_populations <- factor(df1$cell_populations, levels = order_ag)
 
 df1 <- df1 %>%
   filter(!is.na(SBA_res))
 
+df1$Group = factor(df1$Group, levels = c("HC", "PHIV", "Early", "Late"))
+
+df1$cell_populations <- gsub('fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)', 'fHbp+ SM', df1$cell_populations)
+df1$cell_populations = gsub('fHbp\\+ CD27\\- CD21\\- \\(Tissue like Memory\\)', 'fHbp+ TLM', df1$cell_populations)
+df1$cell_populations = gsub('fHbp\\+ CD27\\+ CD21\\- \\(Activated Memory\\)', 'fHbp+ AM', df1$cell_populations)
+
+df1$cell_populations = factor(df1$cell_populations, levels = c("fHbp+ SM","fHbp+ AM", "fHbp+ TLM"))
+
+
+df1$cell_populations = gsub("fHbp\\+ SM", "fHbp+ on SM", df1$cell_populations)
+df1$cell_populations = gsub("fHbp\\+ AM", "AM on fHbp+", df1$cell_populations)
+df1$cell_populations = gsub("fHbp\\+ TLM", "TLM on fHbp+", df1$cell_populations)
+df1$cell_populations = factor(df1$cell_populations, levels = c("fHbp+ on SM", "AM on fHbp+", "TLM on fHbp+"))
 
 # Convert SBA_res to factor with levels R and UR
 df1$SBA_res <- factor(df1$SBA_res, levels = c("SC", "NSC"))
@@ -355,6 +366,6 @@ new =  ggarrange(el_plot_1, el_plot_2, el_plot_3,
                  legend = "right")
 
 comb = grid.arrange(new, 
-                       ncol = 3, 
-                       widths = c(0.05, 1, 0.05), 
-                       layout_matrix = rbind(c(NA,1,NA)))
+                    ncol = 3, 
+                    widths = c(0.05, 1, 0.05), 
+                    layout_matrix = rbind(c(NA,1,NA)))
