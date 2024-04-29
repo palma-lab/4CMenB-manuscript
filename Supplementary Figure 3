@@ -60,21 +60,11 @@ df <- df %>%
   ungroup()
 
 df$StudyPID = as.factor(df$StudyPID)
-df$Group <- factor(df$Group, levels = c("HC", "PHIV"))
+df$Group <- factor(df$Group, levels = c("HC", "PHIV", "Early", "Late"))
 df$TP <- factor(df$TP, levels = c("T0", "T2"))
 df$cell_populations <- factor(df$cell_populations)
 
-####AGGIUNTA EARLY-LATE COMPARISON:
-pl_df_early <- df %>%
-  filter(Treatment == "early treated") %>%
-  mutate(Group = "Early")
-
-pl_df_late <- df %>%
-  filter(Treatment == "late treated") %>%
-  mutate(Group = "Late")
-
-# Combine the original data with the duplicated rows
-pl_df_2 <- bind_rows(df, pl_df_early, pl_df_late)
+pl_df_2 <- df
 pl_df_2$Group = factor(pl_df_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
 
 
@@ -100,6 +90,8 @@ pl_df_2$cell_populations = factor(pl_df_2$cell_populations, levels = c("CD19+",
                                                                            "CD27-IgD- (DN)",
                                                                            "CD27+CD21- (AM)",
                                                                            "CD27-CD21- (TLM)"))
+
+pl_df_2$facet = factor(pl_df_2$facet, levels = c("Lymphocytes", "B cells"))
 
 
 # Step 2: Perform tests based on normality results
