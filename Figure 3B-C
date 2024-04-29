@@ -1,0 +1,480 @@
+df = read.xlsx("MenB_Figures_data.xlsx", 
+               sheet = 5)
+
+# Define the variables to loop over
+variables_to_plot <- c('StudyPID',
+                       'Group',
+                       'Treatment',
+                       'TP',
+                       'Age',
+                       'fHbp',
+                       'fHbp_FC', 
+                       'NadA',
+                       'NadA_FC',
+                       'NHBA',
+                       'NHBA_FC',
+                       'hSBA',
+                       'hSBA_FC',
+                       'fHbp+ SM',
+                       'fHbp+ AM',
+                       'fHbp+ TLM')
+
+
+df_all = df[, variables_to_plot]
+df_all$Treatment = factor(df_all$Treatment, levels = c("early treated", "late treated"))
+
+
+################################################################################ USE FOR AGE MATCHED ANALYSIS
+match = df_all[df_all$TP == "T0", ]
+match = match %>% 
+  filter(!is.na(Age))
+
+age_test = test_group_difference(match, "Group", "Age")
+
+# No matching; constructing a pre-match matchit object
+m.out0 <- matchit(Group ~ Age, data = match,
+                  method = NULL, distance = "glm")
+summary(m.out0)
+
+m.out1 <- matchit(Group ~ Age, data = match,
+                  method = "full", ratio = 2, caliper=0.1, 
+                  m.order = "data")
+
+nn.match<-match.data(m.out1)
+
+age_test = test_group_difference(nn.match, "Group", "Age")
+
+
+summary(m.out1, un = FALSE)
+
+plot(m.out1, type = "jitter", interactive = FALSE)
+plot(m.out1, type = "density", interactive = FALSE,
+     which.xs = ~Age)
+
+df_all = df_all[df_all$StudyPID %in% nn.match$StudyPID, ]
+
+#########################################################################################
+
+# Select relevant columns for each time point
+columns_cor <- c("fHbp", "fHbp_FC", "NadA", "NadA_FC", "NHBA", "NHBA_FC", "hSBA", "hSBA_FC", "fHbp+ SM", "fHbp+ AM", "fHbp+ TLM")
+
+# Subset the dataframe for "T0" and "T2"
+df_T0 <- df_all[df_all$TP == "T0", c("StudyPID", "Group", "Treatment", columns_cor)]
+df_T2 <- df_all[df_all$TP == "T2", c("StudyPID", "Group", "Treatment", columns_cor)]
+df_T3 <- df_all[df_all$TP == "T3", c("StudyPID", "Group", "Treatment", columns_cor)]
+
+
+# Merge the dataframes based on "StudyPID"
+df_merged <- merge(df_T0, df_T2, by = "StudyPID", suffixes = c("_T0", "_T2"))
+
+df_merged <- merge(x = merge(x = df_T0, y = df_T2, by = "StudyPID", suffixes = c("_T0", "_T2")),
+                   y = df_T3[, c(1, 10, 11)], 
+                   by = "StudyPID",
+                   suffixes = c("_T0_T2", "_T3"))
+
+# Get the column names of the merged dataframe
+merged_colnames <- colnames(df_merged)
+
+# Identify the indices of the last two columns
+last_two_columns <- tail(seq_along(merged_colnames), 2)
+
+# Update the names of the last two columns by adding "_T3" suffix
+merged_colnames[last_two_columns] <- paste0(merged_colnames[last_two_columns], "_T3")
+
+# Set the updated column names to the merged dataframe
+colnames(df_merged) <- merged_colnames
+
+#NUMERI PER LEGENDA
+# Create a contingency table
+contingency_table <- table(df_merged[df_merged$Treatment_T0 == "late treated",]$Group_T0)
+
+#HC
+
+df_hc = df_merged[df_merged$Group_T0 == "HC",]
+
+# Compute correlation matrix only HIV
+cor_hc_mat <- cor(df_hc[,c(4:14, 17:ncol(df_hc))], use = "pairwise.complete.obs")
+p_values_hc = cor.mtest(df_hc[,c(4:14, 17:ncol(df_hc))], use = "pairwise.complete.obs")$p
+
+#NUMERI PER LEGENDA
+df_counts <- df_all %>%
+  group_by(Group) %>%
+  summarise(UniquePatients = n_distinct(StudyPID, na.rm = TRUE))
+
+# Print the resulting data frame
+print(df_counts)
+
+
+#HIV
+
+df_hiv = df_merged[df_merged$Group_T0 == "PHIV",]
+
+# Compute correlation matrix only HIV
+cor_hiv_mat <- cor(df_hiv[,c(4:14, 17:ncol(df_hiv))], use = "pairwise.complete.obs")
+p_values_hiv = cor.mtest(df_hiv[,c(4:14, 17:ncol(df_hiv))], use = "pairwise.complete.obs")$p
+
+
+#EARLY
+
+df_early = subset(df_merged, df_merged[["Treatment_T0"]] == "early treated")
+df_early_t0 = df_early[, c(1:14)]
+df_early_t2 = df_early[, c(1, 15:ncol(df_early))]
+
+cor_early_mat <- cor(df_early[,c(4:14, 17:ncol(df_early))], use = "pairwise.complete.obs")
+p_values_early = cor.mtest(df_early[,c(4:14, 17:ncol(df_early))], use = "pairwise.complete.obs", na.rm = T, method = "spearman", exact = FALSE)$p
+
+#Correlation as pearson for the appropriate variables
+cor_early_mat_t0_prop <- cor(df_early[,c(10:14, 23:ncol(df_early))], use = "pairwise.complete.obs")
+p_values_early_t0_prop = cor.mtest(df_early[,c(10:14, 23:ncol(df_early))], use = "pairwise.complete.obs", na.rm = T)$p
+
+
+# Compute correlation matrix only HIV
+cor_early_mat_t2 <- cor(df_early_t2[,c(4:ncol(df_early_t2))], use = "pairwise.complete.obs")
+p_values_early_t2 = cor.mtest(df_early_t2[,c(4:ncol(df_early_t2))], use = "pairwise.complete.obs")$p
+
+# Replace values in cor_early_mat with corresponding values from cor_early_mat_t2
+
+# Get the row and column names of the matrices
+rows_t0 <- rownames(cor_early_mat_t0_prop)
+cols_t0 <- colnames(cor_early_mat_t0_prop)
+
+rows_t2 <- rownames(cor_early_mat_t2)
+cols_t2 <- colnames(cor_early_mat_t2)
+
+p_values_early = cor_early_mat
+
+# Loop through rows and columns
+for (row in rows_t0) {
+  for (col in cols_t0) {
+      # Get the corresponding value from cor_early_mat_t2
+      replacement_value_t0 <- cor_early_mat_t0_prop[row, col]
+      replacement_p_t0 <- p_values_early_t0_prop[row, col]
+    } 
+    
+    # Replace the value in cor_early_mat
+    cor_early_mat[row, col] <- replacement_value_t0
+    p_values_early[row, col] <- replacement_p_t0
+    }
+
+# Loop through rows and columns
+for (row in rows_t2) {
+  for (col in cols_t2) {
+    # Get the corresponding value from cor_early_mat_t2
+    replacement_value <- cor_early_mat_t2[row, col]
+    replacement_p <- p_values_early_t2[row, col]
+    
+    # Replace the value in cor_early_mat
+    cor_early_mat[row, col] <- replacement_value
+    p_values_early[row, col] <- replacement_p
+  }
+}
+
+##########USE THIS BELOW ONLY IN THE CASE OF AGE MATCHED ANALYSIS
+#age matched
+cor_early_mat <- cor(df_early[,c(10:14, 23:ncol(df_early))], use = "pairwise.complete.obs")
+p_values_early = cor.mtest(df_early[,c(10:14, 23:ncol(df_early))], use = "pairwise.complete.obs", na.rm = T)$p
+################################################################
+
+
+#LATE
+
+df_late = subset(df_merged, df_merged[["Treatment_T0"]] == "late treated")
+
+
+# Compute correlation matrix only HIV
+cor_late_mat <- cor(df_late[,c(4:14, 17:ncol(df_late))], use = "pairwise.complete.obs")
+p_values_late = cor.mtest(df_late[,c(4:14, 17:ncol(df_late))], use = "pairwise.complete.obs")$p
+
+##########USE THIS BELOW ONLY IN THE CASE OF AGE MATCHED ANALYSIS
+#age matched
+cor_late_mat <- cor(df_late[,c(10:14, 23:ncol(df_late))], use = "pairwise.complete.obs")
+p_values_late = cor.mtest(df_late[,c(10:14, 23:ncol(df_late))], use = "pairwise.complete.obs", na.rm = T)$p
+################################################################
+
+#NUMERI PER LEGENDA
+# Create a contingency table
+contingency_table <- table(df_early$Group_T2)
+
+
+# List of variable names to process
+variable_names <- c("hSBA_T0", "hSBA_T2", "hSBA_T3", "hSBA_FC_T2")
+process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
+  cat("Processing variable:", variable_name, "\n")
+
+  cor_data1$Group <- "Early"
+  cor_data1$variables <- rownames(cor_data1)
+    
+  cor_data2$Group <- "Late"
+  cor_data2$variables <- rownames(cor_data2)
+  
+  pval_data1$Group <- "Early"
+  pval_data2$Group <- "Late"
+  pval_data1$variables <- rownames(pval_data1)
+  pval_data2$variables <- rownames(pval_data2)
+  #pval_data1$TP <- sapply(strsplit(rownames(cor_data1), "_"), function(x) tail(x, 1))
+  #pval_data2$TP <- sapply(strsplit(rownames(pval_data2), "_"), function(x) tail(x, 1))
+  
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = c("Group"), timevar = "variables", direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = c("Group"), timevar = "variables", direction = "wide")
+  
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = c("Group"), timevar = "variables", direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = c("Group"), timevar = "variables", direction = "wide")
+  print(cor_data1_wide)
+  combined_data <- rbind(cor_data1_wide, cor_data2_wide)
+  combined_data$Ag <- variable_name
+  rownames(combined_data) <- combined_data$Group
+  
+  combined_pval <- rbind(pval_data1_wide, pval_data2_wide)
+  combined_pval$Ag <- variable_name
+  rownames(combined_pval) <- combined_pval$GroupL
+  
+  return(list(combined_data, combined_pval))
+}
+
+# List to store the processed data for each variable
+processed_data_list <- lapply(variable_names, function(var) {
+  cor_data1 <- data.frame(cor_early_mat)
+  cor_data2 <- data.frame(cor_late_mat)
+  pval_data1 <- data.frame(p_values_early)
+  pval_data2 <- data.frame(p_values_late)
+  
+  process_variable_data(cor_data1, cor_data2, pval_data1, pval_data2, var)
+})
+
+# Extract the combined data frames and p-value data frames from the processed_data_list
+combined_data_list <- lapply(processed_data_list, function(res) as.matrix(res[[1]]))
+combined_pval_list <- lapply(processed_data_list, function(res) as.matrix(res[[2]]))
+
+# Merge the combined data frames and p-value data frames into one single data frame
+combined_data <- as.data.frame(do.call(rbind, combined_data_list))
+combined_pval <- as.data.frame(do.call(rbind, combined_pval_list))
+
+
+# Convert all non-numeric columns in combined_data to numeric
+combined_data[, 2:(dim(combined_data)[2] - 1)] <- lapply(
+  combined_data[, 2:(dim(combined_data)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+# Convert all non-numeric columns in combined_pval to numeric
+combined_pval[, 2:(dim(combined_pval)[2] - 1)] <- lapply(
+  combined_pval[, 2:(dim(combined_pval)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+
+
+# Recode p-values into different categories
+combined_pval[combined_pval <= 0.001] <- "***"
+combined_pval[0.001 < combined_pval & combined_pval <= 0.014] <- "**"
+combined_pval[combined_pval <= 0.055 & combined_pval > 0.014] <- "*"
+combined_pval[combined_pval > 0.055] <- " "
+
+# Remove the common prefix "fHbp_T2." from all column names
+colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
+
+# Remove the common prefix "fHbp_T2." from all column names SOLO FREQUENZE
+colnames(combined_data) <- sub("^hSBA_T0\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^hSBA_T0\\.", "", colnames(combined_pval))
+
+#Versione Solo Frequenze:
+
+# Find column indices containing the specified substrings
+selected_columns <- grep("fHbp\\+ SM|fHbp\\+ AM|fHbp\\+ TLM", colnames(combined_data), value = TRUE)
+# Include the first column in the selected columns
+selected_columns <- c("Group", selected_columns, "Ag")
+
+# Subset the data frame to keep only the selected columns
+combined_data <- combined_data[, selected_columns]
+combined_pval <- combined_pval[, selected_columns]
+
+combined_data$Ag <- gsub("hSBA_FC_T2", "hSBA_FC", combined_data$Ag)
+combined_pval$Ag <- gsub("hSBA_FC_T2", "hSBA_FC", combined_pval$Ag)
+
+
+annot <- data.frame(Treatment = combined_data$Group, row.names = rownames(combined_data))
+colnames(annot)[1] <- "ART start"
+annoCol <- list("ART start" = c(Early = "darkcyan", Late = "darkorange"))#, "TP" = c(T0 = "yellow", T2 = "green"))
+
+# CORRELATIONS HEATMAP COLORS
+HPcol <- c("#313695","#4575B4","#74ADD1","#ABD9E9","#E0F3F8","white","white","#FEE090","#FDAE61","#F46D43","#D73027","#A50026")
+brk <- c(seq(-1, -0.2, by = 0.2), -0.00001, 0, 0.00001, seq(0.2, 1, by = 0.2))
+
+library(pheatmap)
+# Create the pheatmap plot
+cor_el = pheatmap(t(combined_data[, 2:(dim(combined_data)[2] - 1)]), 
+                  annotation_col = annot, 
+                  annotation_colors = annoCol,
+                  #cellwidth = .5, 
+                  cellheight = 25,
+                  cluster_cols = FALSE,
+                  cluster_rows = FALSE,
+                  color = HPcol,
+                  breaks = brk,
+                  number_color = "white",
+                  scale = "none",
+                  show_colnames = F,
+                  fontsize = 12,
+                  fontsize_number = 25, 
+                  #main = "Correlation Between Variables",
+                  display_numbers = t(combined_pval[, 2:(dim(combined_pval)[2] - 1)]),
+                  margin = c(10,10))
+cor_el
+# Additional elements
+text_grob <- grid.text(c("hSBA_T0", "hSBA_T2", "hSBA_T3", "hSBA_FC"), 
+                       x = c(0.11, 0.31, 0.51, 0.71), y = 0.38)
+
+line_grobs <- lapply(x_positions, function(x) {
+  grid.lines(
+    x = unit(x, "npc"),
+    y = unit(line_positions, "npc"),
+    gp = gpar(col = "black", lwd = 2)
+  )
+})
+
+
+# Arrange the plot and additional elements using cowplot
+
+combined_plot_el <- plot_grid(combined_plot_el, ncol = 1, nrow = 1)
+
+
+######### HIV vs HC
+
+# List of variable names to process
+variable_names <- c("hSBA_T0", "hSBA_T2", "hSBA_T3", "hSBA_FC_T2")
+process_variable_data <- function(cor_data1, cor_data2, pval_data1, pval_data2, variable_name) {
+  cat("Processing variable:", variable_name, "\n")
+  
+  cor_data1$Group <- "PHIV"
+  cor_data2$Group <- "HC"
+  cor_data1$variables <- rownames(cor_data1)
+  cor_data2$variables <- rownames(cor_data2)
+  
+  pval_data1$Group <- "PHIV"
+  pval_data2$Group <- "HC"
+  pval_data1$variables <- rownames(pval_data1)
+  pval_data2$variables <- rownames(pval_data2)
+  
+  cor_data1_wide <- reshape(cor_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  cor_data2_wide <- reshape(cor_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data1_wide <- reshape(pval_data1[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  pval_data2_wide <- reshape(pval_data2[, c(variable_name, "variables", "Group"), drop = FALSE], idvar = "Group", timevar = "variables", direction = "wide")
+  
+  combined_data <- rbind(cor_data1_wide, cor_data2_wide)
+  combined_data$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_data) <- combined_data$Group
+  
+  
+  combined_pval <- rbind(pval_data1_wide, pval_data2_wide)
+  combined_pval$Ag <- gsub("_T2", "", variable_name)
+  rownames(combined_pval) <- combined_pval$Group
+  
+  
+  return(list(combined_data, combined_pval))
+}
+# List to store the processed data for each variable
+processed_data_list <- lapply(variable_names, function(var) {
+  cor_data1 <- data.frame(cor_hiv_mat)
+  cor_data2 <- data.frame(cor_hc_mat)
+  pval_data1 <- data.frame(p_values_hiv)
+  pval_data2 <- data.frame(p_values_hc)
+  
+  process_variable_data(cor_data1, cor_data2, pval_data1, pval_data2, var)
+})
+
+# Extract the combined data frames and p-value data frames from the processed_data_list
+combined_data_list <- lapply(processed_data_list, function(res) as.matrix(res[[1]]))
+combined_pval_list <- lapply(processed_data_list, function(res) as.matrix(res[[2]]))
+
+# Merge the combined data frames and p-value data frames into one single data frame
+combined_data <- as.data.frame(do.call(rbind, combined_data_list))
+combined_pval <- as.data.frame(do.call(rbind, combined_pval_list))
+
+
+# Convert all non-numeric columns in combined_data to numeric
+combined_data[, 2:(dim(combined_data)[2] - 1)] <- lapply(
+  combined_data[, 2:(dim(combined_data)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+# Convert all non-numeric columns in combined_pval to numeric
+combined_pval[, 2:(dim(combined_pval)[2] - 1)] <- lapply(
+  combined_pval[, 2:(dim(combined_pval)[2] - 1)], 
+  function(x) as.numeric(as.character(x))
+)
+
+grp = combined_pval$Group
+
+# Recode p-values into different categories
+combined_pval[combined_pval <= 0.001] <- "***"
+combined_pval[0.001 < combined_pval & combined_pval <= 0.014] <- "**"
+combined_pval[combined_pval <= 0.054 & combined_pval > 0.014] <- "*"
+combined_pval[combined_pval > 0.055] <- " "
+
+# Remove the common prefix "fHbp_T2." from all column names
+colnames(combined_data) <- sub("^fHbp_T2\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^fHbp_T2\\.", "", colnames(combined_pval))
+
+# Remove the common prefix "hSBA_T0." from all column names SOLO FREQUENZE
+colnames(combined_data) <- sub("^hSBA_T0\\.", "", colnames(combined_data))
+colnames(combined_pval) <- sub("^hSBA_T0\\.", "", colnames(combined_pval))
+
+
+combined_pval$Group = grp
+
+#Versione Solo Frequenze
+# Find column indices containing the specified substrings
+selected_columns <- grep("fHbp\\+ SM|fHbp\\+ AM|fHbp\\+ TLM", colnames(combined_data), value = TRUE)
+# Include the first column in the selected columns
+selected_columns <- c("Group", selected_columns, "Ag")
+# Subset the data frame to keep only the selected columns
+
+combined_data <- combined_data[, selected_columns]
+combined_pval <- combined_pval[, selected_columns]
+
+combined_data_hiv = combined_data %>%
+  filter(Group != "HC")
+
+combined_pval_hiv = combined_pval %>%
+  filter(Group != "HC")
+
+
+library(pheatmap)
+# Apply the same color scheme for annotations as before
+annot <- data.frame(Group = combined_data$Group, row.names = rownames(combined_data))
+
+#SOLO HIV
+annot <- data.frame(Group = combined_data_hiv$Group, row.names = rownames(combined_data_hiv))
+
+colnames(annot)[1] <- "Group    "
+#SOLO HIV
+annoCol <- list("Group    " = c(PHIV = "red")) 
+
+# CORRELATIONS HEATMAP COLORS
+HPcol <- c("#313695","#4575B4","#74ADD1","#ABD9E9","#E0F3F8","white","white","#FEE090","#FDAE61","#F46D43","#D73027","#A50026")
+brk <- c(seq(-1, -0.2, by = 0.2), -0.00001, 0, 0.00001, seq(0.2, 1, by = 0.2))
+
+# Create the pheatmap plot
+cor_hm = pheatmap(t(combined_data_hiv[, 2:(dim(combined_data_hiv)[2] - 1)]), 
+                  annotation_col = annot, 
+                  annotation_colors = annoCol,
+                  cellheight = 25,
+                  cellwidth = 110,
+                  cluster_cols = FALSE,
+                  cluster_rows = FALSE, 
+                  scale = "none",
+                  number_color = "white",
+                  color = HPcol,
+                  breaks = brk,
+                  show_colnames = F,
+                  fontsize = 12,
+                  fontsize_number = 25, 
+                  #main = "Correlation Between Variables",
+                  display_numbers = t(combined_pval_hiv[, 2:(dim(combined_pval_hiv)[2] - 1)]))
+
+
+comb_hm = grid.arrange(new, cor_hm[[4]], cor_el[[4]], 
+                       ncol = 3, 
+                       widths = c(0.05, 1, 0.05), 
+                       layout_matrix = rbind(c(NA,1,NA), c(NA,2,NA), c(NA, 3, NA)))
