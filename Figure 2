@@ -54,7 +54,7 @@ df_notag$Group = as.factor(df_notag$Group)
 df_notag$Gender = as.factor(df_notag$Gender)
 
 ########################################################################### NO AGE MATCH:
-plot_df = df_notag 
+plot_df_2 = df_notag[df_notag$TP == "T2",] 
 
 ########################################################################### USE THIS DF FOR AGE MATCHED ANALYSIS
 
@@ -88,16 +88,6 @@ plot_df = df_notag[df_notag$StudyPID %in% nn.match$StudyPID, ]
 
 ##################################################################################################################
 
-plot_df_early <- plot_df %>%
-  filter(Treatment == "early treated") %>%
-  mutate(Group = "Early")
-
-plot_df_late <- plot_df %>%
-  filter(Treatment == "late treated") %>%
-  mutate(Group = "Late")
-
-# Combine the original data with the duplicated rows
-plot_df_2 <- bind_rows(plot_df, plot_df_early, plot_df_late)
 plot_df_2$Group = factor(plot_df_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
 plot_df_2$facet = ifelse(plot_df_2$cell_populations == "CD19+", "Lymphocytes", "B cells")
 plot_df_2$facet = factor(plot_df_2$facet, levels = c("Lymphocytes", "B cells"))
