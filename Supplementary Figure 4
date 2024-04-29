@@ -1,0 +1,335 @@
+############################################################################################### SUPPLEMENTARY FIGURE 4
+df = read.xlsx("Supporting Data Values.xlsx", 
+                sheet = 3)
+
+# Reorder the levels of the cell_populations variable
+order_notag = c("CD19+", 
+                "CD27-IgD+ (Naive)",
+                "CD27+IgD+ (USM)",
+                "CD27+IgD- (SM)",
+                "CD27-IgD- (DN)",
+                "CD27+CD21- (AM)",
+                "CD27-CD21- (TLM)")
+
+
+df1 = df[df$cell_populations %in% order_notag,]
+
+df1 <- df1 %>%
+  filter(!is.na(SBA_res))
+
+
+# Convert SBA_res to factor with levels R and UR
+df1$SBA_res <- factor(df1$SBA_res, levels = c("SC", "NSC"))
+
+
+#Perform tests based on normality results
+results_list_btw <- list()
+results_list_wtn <- list()
+
+
+# Iterate through each unique cell_populations
+for (cp in unique(df1$cell_populations)) {
+  print(cp)
+  
+  # Filter data for the specific cell_population
+  subset_data <- df1 %>%
+    filter(cell_populations == cp)
+  
+  # Check normality for pairwise comparisons within the same group at different time points
+  result_group_comparison <- subset_data %>%
+    filter(Group != "Early") %>% #few data
+    group_by(SBA_res, Group) %>%
+    summarize(p_value = shapiro_test(frequencies)$p.value) 
+  
+  # Check if any group is not normal within the same TP
+  non_normal_groups_within_tp <- any(result_group_comparison$p_value < 0.05)
+  
+  if (length(unique(subset_data$Group)) > 2){
+    # Perform test based on normality
+    if (non_normal_groups_within_tp) {
+      # If at least one group is not normal, perform Dunn test
+      result_btwn_groups <- subset_data %>%
+        #PHIV group not considered as the elements are already present in early and late groups
+        filter(Group != "PHIV") %>%
+        group_by(SBA_res, cell_populations) %>%
+        dunn_test(frequencies ~ Group, p.adjust.method = "fdr") %>%
+        select(-statistic) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1) 
+      
+      result_wtn_groups <- subset_data %>%
+        group_by(Group, cell_populations) %>%
+        dunn_test(frequencies ~ SBA_res, p.adjust.method = "fdr") %>%
+        select(-statistic) %>%
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+      
+      
+    } else {
+      print("PAIRWISE T")
+      # If all groups are normal, perform pairwise t-test
+      result_btwn_groups <- subset_data %>%
+        group_by(SBA_res, cell_populations) %>%
+        pairwise_t_test(frequencies ~ Group, p.adjust.method = "fdr", comparisons = list(c("HC", "Early"), 
+                                                                                         c("HC", "Late"), 
+                                                                                         c("Early", "Late"))) %>%
+        select(-p.signif) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+      
+      result_wtn_groups <- subset_data %>%
+        group_by(Group, cell_populations) %>%
+        pairwise_t_test(frequencies ~ SBA_res, p.adjust.method = "fdr") %>%
+        select(-p.signif) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+    }
+  } else {
+    if (non_normal_groups_within_tp) {
+      # If at least one group is not normal, perform Dunn test
+      subset_data$frequencies = as.numeric(subset_data$frequencies)
+      
+      result_btwn_groups <- subset_data %>%
+        group_by(cell_populations, SBA_res) %>%
+        wilcox_test(frequencies ~ Group, p.adjust.method = "fdr", exact = FALSE) %>%
+        select(-statistic) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+      
+      result_wtn_groups <- subset_data %>%
+        group_by(cell_populations, Group) %>%
+        wilcox_test(frequencies ~ SBA_res, p.adjust.method = "fdr", exact = FALSE, paired = F) %>%
+        select(-statistic) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+    } else {
+      # If all groups are normal, perform pairwise t-test
+      result_btwn_groups <- subset_data %>%
+        group_by(cell_populations, SBA_res) %>%
+        t_test(frequencies ~ Group, p.adjust.method = "fdr") %>%
+        select(-statistic, -df) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+      
+      result_wtn_groups <- subset_data %>%
+        group_by(cell_populations, Group) %>%
+        t_test(frequencies ~ SBA_res, p.adjust.method = "fdr", paired = F) %>%
+        select(-statistic, -df) %>% 
+        add_xy_position(x = "SBA_res", group = "Group", scales = "free_y", step.increase = 0.1, dodge = 1)
+    }
+  }
+  # Add the result to the list
+  results_list_btw[[cp]] <- result_btwn_groups
+  results_list_wtn[[cp]] <- result_wtn_groups
+}
+
+# Step 3: Merge all the results
+final_results_btw <- do.call(rbind, results_list_btw)
+final_results_wtn <- do.call(rbind, results_list_wtn)
+
+pwc <- final_results_btw %>% filter(p.adj.signif != "ns")
+pwc$p.adj =  ifelse(round(pwc$p.adj, 3) < 0.001, "< 0.001", round(pwc$p.adj, 3))
+
+pwc2 <- final_results_wtn %>% filter(p.adj.signif != "ns")
+pwc2$p.adj =  ifelse(round(pwc2$p.adj, 3) < 0.001, "< 0.001", round(pwc2$p.adj, 3))
+
+stat_test_list = list()
+# Iterate through each unique cell_populations
+for (cp in unique(df1$cell_populations)) {
+  print(cp)
+  
+  # Filter data for the specific cell_population
+  subset_data <- df1 %>%
+    filter(cell_populations == cp, SBA_res == "SC")
+  
+  # plot the values with Group as hue
+  result_group_comparison <- subset_data %>%
+    filter(Group %in% c("HC", "PHIV")) %>%
+    group_by(SBA_res, Group) %>%
+    summarize(p_value = shapiro_test(frequencies)$p.value) 
+  
+  print(result_group_comparison)
+  # Check if any group is not normal within the same TP
+  non_normal_groups_within_tp <- any(result_group_comparison$p_value < 0.05)
+  
+  if (non_normal_groups_within_tp) {
+    stat.test_t0 <- subset_data %>%
+      group_by(cell_populations, SBA_res) %>%
+      wilcox_test(frequencies ~ Group, comparisons = list(c("HC", "PHIV"))) %>%
+      select(-statistic) %>%
+      add_xy_position(x = "SBA_res", group = "Group", dodge = 1)
+  } else {
+    stat.test_t0 <- subset_data %>%
+      group_by(cell_populations, SBA_res) %>%
+      t_test(frequencies ~ Group, comparisons = list(c("HC", "PHIV"))) %>%
+      select(-statistic, -df) %>%
+      add_xy_position(x = "SBA_res", group = "Group", dodge = 1)
+  }
+  
+  # Filter data for the specific cell_population
+  subset_data <- df1 %>%
+    filter(cell_populations == cp, SBA_res == "NSC")
+  
+  # plot the values with Group as hue
+  result_group_comparison <- subset_data %>%
+    filter(Group %in% c("HC", "PHIV")) %>%
+    group_by(SBA_res, Group) %>%
+    summarize(p_value = shapiro_test(frequencies)$p.value) 
+  
+  print(result_group_comparison)
+  # Check if any group is not normal within the same TP
+  non_normal_groups_within_tp <- any(result_group_comparison$p_value < 1)
+  
+  if (non_normal_groups_within_tp) {
+    stat.test_t2 <- subset_data %>%
+      group_by(cell_populations, SBA_res) %>%
+      wilcox_test(frequencies ~ Group, comparisons = list(c("HC", "PHIV"))) %>%
+      select(-statistic) %>%
+      add_xy_position(x = "SBA_res", group = "Group", dodge = 1)
+  } else {
+    stat.test_t2 <- subset_data %>%
+      group_by(cell_populations, SBA_res) %>%
+      t_test(frequencies ~ Group, comparisons = list(c("HC", "PHIV"))) %>%
+      select(-statistic, -df) %>%
+      add_xy_position(x = "SBA_res", group = "Group", dodge = 1)
+  }
+  
+  stat.test = rbind(stat.test_t0, stat.test_t2)
+  # Add the result to the list
+  stat_test_list[[cp]] <- stat.test
+}
+
+# Step 3: Merge all the results
+final_stat_results_btw <- do.call(rbind, stat_test_list) 
+
+pwc_2grp <- final_stat_results_btw %>% filter(p.adj.signif != "ns")
+pwc_2grp$p.adj =  ifelse(round(pwc_2grp$p.adj, 3) < 0.001, "< 0.001", round(pwc_2grp$p.adj, 3))
+
+# Merge rows using bind_rows
+merged_btw <- bind_rows(pwc, pwc_2grp)
+
+stat_result_tibble_wtn = pwc2
+stat_result_tibble_btw = merged_btw
+
+
+#plot SM
+el_plot_1 <- ggviolin(df1[df1$cell_populations == "fHbp+ on SM",], 
+                      x = "SBA_res", 
+                      y = "frequencies", 
+                      color = "Group",
+                      fill = "Group", 
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  xlab("") +
+  ylab("% of fHbp+ on SM") + 
+  scale_x_discrete(labels = c("SC", "NSC")) +
+  geom_jitter(aes(fill = Group),color = "black",  position = position_jitterdodge(dodge.width = 1)) +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(stat_result_tibble_btw[stat_result_tibble_btw$cell_populations == "fHbp+ on SM",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) +
+  stat_pvalue_manual(stat_result_tibble_wtn[stat_result_tibble_wtn$cell_populations == "fHbp+ on SM",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) 
+
+#plot AM
+el_plot_2 <- ggviolin(df1[df1$cell_populations == "AM on fHbp+",], 
+                      x = "SBA_res", 
+                      y = "frequencies", 
+                      color = "Group",
+                      fill = "Group", 
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  xlab("") +
+  ylab("% of AM on fHbp+") + 
+  scale_x_discrete(labels = c("SC", "NSC")) +
+  geom_jitter(aes(fill = Group),color = "black",  position = position_jitterdodge(dodge.width = 1)) +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(stat_result_tibble_btw[stat_result_tibble_btw$cell_populations == "AM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) +
+  stat_pvalue_manual(stat_result_tibble_wtn[stat_result_tibble_wtn$cell_populations == "AM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) 
+
+#plot TLM
+el_plot_3 <- ggviolin(df1[df1$cell_populations == "TLM on fHbp+",], 
+                      x = "SBA_res", 
+                      y = "frequencies", 
+                      color = "Group",
+                      fill = "Group", 
+                      #facet.by = "cell_populations",
+                      scale = "width",
+                      position = position_dodge(width = 1),
+                      trim = T,
+                      alpha = 0.6,
+                      scales = "free_y", 
+                      add = c("boxplot")) +
+  scale_fill_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  scale_color_manual(values = c("HC" = "blue", "PHIV" = "red", "Early" = 'darkcyan',"Late" = "orange")) +
+  xlab("") +
+  ylab("% of TLM on fHbp+") + 
+  scale_x_discrete(labels = c("SC", "NSC")) +
+  geom_jitter(aes(fill = Group),color = "black",  position = position_jitterdodge(dodge.width = 1)) +
+  theme_classic(base_size = 30) +
+  theme(axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(size = 17.5),
+        legend.title = element_text(size = 17.5),
+        legend.text = element_text(size = 15)) +
+  scale_y_continuous(expand = expansion(mult = c(0.01, 0.08))) + 
+  stat_pvalue_manual(stat_result_tibble_btw[stat_result_tibble_btw$cell_populations == "TLM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6) +
+  stat_pvalue_manual(stat_result_tibble_wtn[stat_result_tibble_wtn$cell_populations == "TLM on fHbp+",],
+                     scales = "free_y",
+                     tip.length = 0.01,
+                     #step.increase = 0.01,
+                     label = "{round(p.adj, 2)}",
+                     size = 6)  
+
+############################################################################################### SUP FIGURE 4 PLOT:
+
+new =  ggarrange(el_plot_1, el_plot_2, el_plot_3, 
+                 nrow = 1, 
+                 ncol = 3, 
+                 widths = c(1, 1, 1), 
+                 common.legend = TRUE, 
+                 legend = "right")
+
+comb = grid.arrange(new, 
+                       ncol = 3, 
+                       widths = c(0.05, 1, 0.05), 
+                       layout_matrix = rbind(c(NA,1,NA)))
