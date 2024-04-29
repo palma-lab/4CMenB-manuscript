@@ -39,6 +39,8 @@ df_ag$cell_populations <- factor(df_ag$cell_populations, levels = order_ag)
 df_ag$Group = as.factor(df_ag$Group)
 df_ag$Gender = as.factor(df_ag$Gender)
 
+#################################################### NO AGE MATCHING
+df_ag_2 = df_ag[df_ag$TP == "T2",] 
 
 ############################################################################################################### AGE MATCHED ANALYSIS IF REQUIRED
 cd19 = df_ag[df_ag$cell_populations == "fHbp+ CD27+IgD-IgG+ (Switched Memory)", ]
@@ -67,16 +69,6 @@ plot(m.out1, type = "density", interactive = FALSE,
 
 ##################################################################################################################
 
-df_ag_early <- df_ag %>%
-  filter(Treatment == "early treated") %>%
-  mutate(Group = "Early")
-
-df_ag_late <- df_ag %>%
-  filter(Treatment == "late treated") %>%
-  mutate(Group = "Late")
-
-# Combine the original data with the duplicated rows
-df_ag_2 <- bind_rows(df_ag, df_ag_early, df_ag_late)
 df_ag_2$Group = factor(df_ag_2$Group, levels = c("HC", "PHIV", "Early", "Late"))
 
 df_ag_2$cell_populations <- gsub('fHbp\\+ CD27\\+IgD-IgG\\+ \\(Switched Memory\\)', 'fHbp+ SM', df_ag_2$cell_populations)
