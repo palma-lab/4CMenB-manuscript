@@ -1,6 +1,30 @@
-df = read.xlsx("C:/Users/snnma/OneDrive/Desktop/Progetti/MenB/Paper/Review/MenB_Figures_data.xlsx", 
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("MatchIt")
+library(ggh4x)
+library(rstatix)
+
+
+df = read.xlsx("Supporting Data Values.xlsx", 
                sheet = 3)
-################################################################################### USE THIS FOR lines for Age MATCHING
+################################################################################### USE THIS lines FOR for Age MATCHING
 
 prov = df[(df$cell_populations == "CD19+") & (df$TP == "T0"),]
 
