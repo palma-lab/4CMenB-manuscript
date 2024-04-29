@@ -1,3 +1,27 @@
+library("HTqPCR")
+library(dplyr)
+library(tidyr)
+library(stringi)
+library("tibble")
+library(ggplot2)
+library(cowplot)
+library(stringr)
+library(ctrlGene)
+library(readxl)
+library(factoextra)
+library(ggstar)
+library(ggforce)
+library(ggpubr)
+library(ggsignif)
+library(reshape2)
+library(gridExtra)
+library(grid)
+library(EnhancedVolcano)
+library("MatchIt")
+library(ggh4x)
+library(rstatix)
+
+
 inp_men = read.delim("Combined_Chip_Run_MeN.csv", 
                      skip = 11, 
                      sep = ",", 
@@ -227,9 +251,7 @@ vol_2 <- vol_2 + theme(legend.position = "bottom") + guides(color = guide_legend
 vol_3 <- vol_3 + theme(legend.position = "none")
 
 
-plprov_h = vol_1 + plot_spacer() + vol_2 + plot_spacer() + vol_3 + plot_layout(widths = c(1, 0.1, 1, 0.1, 1))
-
-ggsave("Figure_5_top.png", plprov_h, height = 12, width = 25, dpi = 600)
+plot_h = vol_1 + plot_spacer() + vol_2 + plot_spacer() + vol_3 + plot_layout(widths = c(1, 0.1, 1, 0.1, 1))
 
 ############################################################     FIGURE 5 D-E
 
@@ -254,7 +276,8 @@ genes_symbols = c("FOXP1", "CD74", "CXCR4", "CD83", "PAX5",
 genes_symbols_hiv = c("TNFRSF13B", "IL4R", "IKBKG", "NOD2", "PPP1R13B")
 
 de = mapIds(org.Hs.eg.db, genes_symbols_pv, 'ENTREZID', 'SYMBOL')
-#Per HIV
+
+#PHIV
 de_hiv = mapIds(org.Hs.eg.db, genes_symbols_hiv, 'ENTREZID', 'SYMBOL')
 
 edo <- enrichGO(de, 'org.Hs.eg.db', ont = "BP",  pAdjustMethod = "fdr", minGSSize = 2)
@@ -291,6 +314,3 @@ go_hiv_no_legend <- go_hiv + theme_classic(base_size = 30) + theme(legend.positi
 # Combine the plots and specify the position of the legend
 go_plots <- go_hc_no_legend + plot_spacer() + go_hiv_no_legend +
   plot_layout(guides = 'collect', widths = c(1, 0.1, 1)) 
-
-#versione orizzontale
-ggsave("Figure_5_bot.png", go_plots, height = 15, width = 43, dpi = 600)
